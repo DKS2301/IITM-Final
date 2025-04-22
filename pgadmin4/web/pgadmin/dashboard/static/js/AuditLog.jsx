@@ -902,8 +902,7 @@ function AuditLog({ sid, treeNodeInfo, pageVisible }) {
           />
         </Paper>
       )}
-    </Box>
-  );
+    </Box>  );
 }
 
 AuditLog.propTypes = {
