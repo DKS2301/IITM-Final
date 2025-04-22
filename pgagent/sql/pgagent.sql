@@ -154,32 +154,6 @@ BEGIN
 END;
 ' LANGUAGE 'plpgsql' VOLATILE;
 
-CREATE TABLE pgagent.pga_job_notification (
-    jnid SERIAL PRIMARY KEY,
-    jnjobid INTEGER NOT NULL,
-    jnenabled BOOLEAN NOT NULL DEFAULT true,
-    jnbrowser BOOLEAN NOT NULL DEFAULT true,
-    jnemail BOOLEAN NOT NULL DEFAULT false,
-    jnwhen CHAR(1) NOT NULL DEFAULT 'f',
-    jnmininterval INTEGER NOT NULL DEFAULT 0,
-    jnemailrecipients TEXT NOT NULL DEFAULT '',
-    jncustomtext TEXT NOT NULL DEFAULT '',
-    jnlastnotification TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    
-    CONSTRAINT pga_job_notification_jnwhen_check
-      CHECK (jnwhen = ANY (ARRAY['a', 's', 'f', 'b'])),
-
-    CONSTRAINT pga_job_notification_jnjobid_fkey
-      FOREIGN KEY (jnjobid)
-      REFERENCES pgagent.pga_job(jobid)
-      ON UPDATE RESTRICT
-      ON DELETE CASCADE
-);
-
--- Unique index on jnjobid
-CREATE UNIQUE INDEX pga_job_notification_jnjobid_unique
-    ON pgagent.pga_job_notification (jnjobid);
-
 
 CREATE OR REPLACE FUNCTION pgagent.pga_next_schedule(int4, timestamptz, timestamptz, _bool, _bool, _bool, _bool, _bool, _bool) RETURNS timestamptz AS '
 DECLARE

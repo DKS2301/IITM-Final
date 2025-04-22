@@ -14,6 +14,14 @@
 #define JOB_H
 
 #include <boost/thread.hpp>
+#include <string>
+
+// Forward declarations
+class DBconn;
+
+// Email notification functions
+void CheckPendingEmailNotifications();
+
 
 class Job
 {
@@ -26,6 +34,8 @@ public:
 	{
 		return m_status == "r";
 	}
+	bool CheckDependencies();
+	void SetStatus(const std::string &status);
 
 protected:
 	DBconn      *m_threadConn;
@@ -45,4 +55,5 @@ private:
 };
 
 #endif // JOB_H
+
 

@@ -93,6 +93,7 @@ jschours             bool[24]             NOT NULL DEFAULT '{f,f,f,f,f,f,f,f,f,f
 jscweekdays          bool[7]              NOT NULL DEFAULT '{f,f,f,f,f,f,f}',
 jscmonthdays         bool[32]             NOT NULL DEFAULT '{f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f,f}',
 jscmonths            bool[12]             NOT NULL DEFAULT '{f,f,f,f,f,f,f,f,f,f,f,f}',
+jscoccurrence         bool[5]              NOT NULL DEFAULT '{f,f,f,f,f}',
 CONSTRAINT pga_schedule_jscminutes_size CHECK (array_upper(jscminutes, 1) = 60),
 CONSTRAINT pga_schedule_jschours_size CHECK (array_upper(jschours, 1) = 24),
 CONSTRAINT pga_schedule_jscweekdays_size CHECK (array_upper(jscweekdays, 1) = 7),
@@ -154,7 +155,7 @@ END;
 ' LANGUAGE 'plpgsql' VOLATILE;
 
 
-CREATE OR REPLACE FUNCTION pgagent.pga_next_schedule(int4, timestamptz, timestamptz, _bool, _bool, _bool, _bool, _bool) RETURNS timestamptz AS '
+CREATE OR REPLACE FUNCTION pgagent.pga_next_schedule(int4, timestamptz, timestamptz, _bool, _bool, _bool, _bool, _bool, _bool) RETURNS timestamptz AS '
 DECLARE
     jscid           ALIAS FOR $1;
     jscstart        ALIAS FOR $2;
@@ -164,24 +165,28 @@ DECLARE
     jscweekdays     ALIAS FOR $6;
     jscmonthdays    ALIAS FOR $7;
     jscmonths       ALIAS FOR $8;
-
+    jscoccurrence   ALIAS FOR $9;
+    
     nextrun         timestamp := ''1970-01-01 00:00:00-00'';
     runafter        timestamp := ''1970-01-01 00:00:00-00'';
+    curr_date       timestamp := ''1970-01-01 00:00:00-00'';
+                    
 
-    bingo            bool := FALSE;
-    gotit            bool := FALSE;
+    bingo           bool := FALSE;
+    gotit           bool := FALSE;
     foundval        bool := FALSE;
     daytweak        bool := FALSE;
-    minutetweak        bool := FALSE;
+    minutetweak     bool := FALSE;
 
     i                int2 := 0;
     d                int2 := 0;
 
-    nextminute        int2 := 0;
+    nextminute      int2 := 0;
     nexthour        int2 := 0;
-    nextday            int2 := 0;
+    nextday         int2 := 0;
     nextmonth       int2 := 0;
     nextyear        int2 := 0;
+    occurrence      INT2 := 0; 
 
 
 BEGIN
@@ -236,7 +241,7 @@ BEGIN
                     foundval := TRUE;
                     EXIT;
                 END IF;
-           END LOOP;
+            END LOOP;
         END IF;
 
         --
@@ -388,9 +393,9 @@ BEGIN
         IF (nextyear > date_part(''YEAR'', runafter) OR nextmonth > date_part(''MONTH'', runafter) OR nextday > date_part(''DAY'', runafter) OR nexthour > date_part(''HOUR'', runafter) OR daytweak = TRUE) THEN
             nextminute := 0;
             IF minutetweak = TRUE THEN
-        d := 1;
+                d := 1;
             ELSE
-        d := date_part(''MINUTE'', runafter)::int2;
+                d := date_part(''MINUTE'', runafter)::int2;
             END IF;
             FOR i IN d .. 60 LOOP
                 IF jscminutes[i] = TRUE THEN
@@ -496,16 +501,57 @@ BEGIN
             -- OK, is the correct weekday selected, or a wildcard?
             IF (jscweekdays[date_part(''DOW'', nextrun) + 1] = TRUE OR gotit = FALSE) THEN
 
-                -- Check for exceptions
-                SELECT INTO d jexid FROM pgagent.pga_exception WHERE jexscid = jscid AND ((jexdate = nextrun::date AND jextime = nextrun::time) OR (jexdate = nextrun::date AND jextime IS NULL) OR (jexdate IS NULL AND jextime = nextrun::time));
-                IF FOUND THEN
-                    -- Nuts - found an exception. Increment the time and try again
-                    runafter := nextrun + INTERVAL ''1 Minute'';
-                    bingo := FALSE;
-                    minutetweak := TRUE;
-            daytweak := FALSE;
+                -- Check for occurrence
+                gotit := FALSE;
+                FOR i IN 1 .. 5 LOOP
+                    IF jscoccurrence[i] = TRUE THEN
+                        gotit := TRUE;
+                        EXIT;
+                    END IF;
+                END LOOP;
+
+                IF gotit = TRUE THEN
+                    -- finding current occurrence
+                    occurrence := 0; -- Reset occurrence counter before calculation
+                    curr_date := date_trunc(''MONTH'', nextrun);
+                    WHILE curr_date <= nextrun LOOP
+                        IF date_part(''DOW'', curr_date) = date_part(''DOW'', nextrun) THEN
+                            occurrence := occurrence + 1;
+                        END IF;
+                        curr_date := curr_date + INTERVAL ''1 Day'';
+                    END LOOP;
+                    -- is it the correct occurrence?
+                    IF jscoccurrence[occurrence] = TRUE THEN
+                        -- Check for exceptions
+                        SELECT INTO d jexid FROM pgagent.pga_exception WHERE jexscid = jscid AND ((jexdate = nextrun::date AND jextime = nextrun::time) OR (jexdate = nextrun::date AND jextime IS NULL) OR (jexdate IS NULL AND jextime = nextrun::time));
+                        IF FOUND THEN
+                            -- Nuts - found an exception. Increment the time and try again
+                            runafter := nextrun + INTERVAL ''1 Minute'';
+                            bingo := FALSE;
+                            minutetweak := TRUE;
+                            daytweak := FALSE;
+                        ELSE
+                            bingo := TRUE;
+                        END IF;
+                    ELSE
+                        -- We''re on the wrong occurrence of week day - increment a day and try again.
+                        runafter := nextrun + INTERVAL ''1 Day'';
+                        bingo := FALSE;
+                        minutetweak := FALSE;
+                        daytweak := TRUE;
+                    END IF;
                 ELSE
-                    bingo := TRUE;
+                    -- Check for exceptions
+                    SELECT INTO d jexid FROM pgagent.pga_exception WHERE jexscid = jscid AND ((jexdate = nextrun::date AND jextime = nextrun::time) OR (jexdate = nextrun::date AND jextime IS NULL) OR (jexdate IS NULL AND jextime = nextrun::time));
+                    IF FOUND THEN
+                        -- Nuts - found an exception. Increment the time and try again
+                        runafter := nextrun + INTERVAL ''1 Minute'';
+                        bingo := FALSE;
+                        minutetweak := TRUE;
+                        daytweak := FALSE;
+                    ELSE
+                        bingo := TRUE;
+                    END IF;
                 END IF;
             ELSE
                 -- We''re on the wrong week day - increment a day and try again.
@@ -527,7 +573,7 @@ BEGIN
     RETURN nextrun;
 END;
 ' LANGUAGE 'plpgsql' VOLATILE;
-COMMENT ON FUNCTION pgagent.pga_next_schedule(int4, timestamptz, timestamptz, _bool, _bool, _bool, _bool, _bool) IS 'Calculates the next runtime for a given schedule';
+COMMENT ON FUNCTION pgagent.pga_next_schedule(int4, timestamptz, timestamptz, _bool, _bool, _bool, _bool, _bool, _bool) IS 'Calculates the next runtime for a given schedule';
 
 
 
@@ -570,7 +616,7 @@ BEGIN
     IF NEW.jobenabled THEN
         IF NEW.jobnextrun IS NULL THEN
              SELECT INTO NEW.jobnextrun
-                    MIN(pgagent.pga_next_schedule(jscid, jscstart, jscend, jscminutes, jschours, jscweekdays, jscmonthdays, jscmonths))
+                    MIN(pgagent.pga_next_schedule(jscid, jscstart, jscend, jscminutes, jschours, jscweekdays, jscmonthdays, jscmonths, jscoccurrence))
                FROM pgagent.pga_schedule
               WHERE jscenabled AND jscjobid=OLD.jobid;
         END IF;
@@ -662,5 +708,4 @@ SELECT pg_catalog.pg_extension_config_dump('pga_schedule', '');
 SELECT pg_catalog.pg_extension_config_dump('pga_exception', '');
 SELECT pg_catalog.pg_extension_config_dump('pga_joblog', '');
 SELECT pg_catalog.pg_extension_config_dump('pga_jobsteplog', '');
-
 

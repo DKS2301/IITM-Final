@@ -58,32 +58,116 @@ Job::Job(DBconn *conn, const std::string &jid)
 				NotifyJobStatus(m_jobid, "running","");
 
 			}
+		// Get current user
+		std::string currentUser = m_threadConn->ExecuteScalar("SELECT current_user");
+
+		// Get job state before update
+		DBresultPtr oldState = m_threadConn->Execute(
+			"SELECT row_to_json(j)::jsonb as job_state FROM pgagent.pga_job j WHERE j.jobid=" + m_jobid
+		);
+		std::string jobState = oldState ? m_threadConn->qtDbString(oldState->GetString("job_state")) : "NULL";
+
+		// Log job execution start
+		std::string auditQuery = "SELECT pgagent.pga_log_job_operation(" + m_jobid +
+								 ", 'EXECUTE', " + m_threadConn->qtDbString(currentUser) +
+								 ", " + jobState + ", NULL, 'Job execution started')";
+		m_threadConn->ExecuteVoid(auditQuery);
+
+		// Retrieve job log ID
+		DBresultPtr id = m_threadConn->Execute(
+			"INSERT INTO pgagent.pga_joblog(jlgjobid, jlgstatus) VALUES (" + m_jobid + ", 'r') RETURNING jlgid"
+		);
+		if (id && id->RowsAffected() > 0)
+		{
+			m_logid = id->GetString("jlgid");
+			m_status = "r";
 		}
 	}
 }
-
+}
 
 Job::~Job()
 {
 	if (!m_status.empty())
 	{
-		m_threadConn->ExecuteVoid(
-			"UPDATE pgagent.pga_joblog "
-			"   SET jlgstatus='" + m_status + "', jlgduration=now() - jlgstart " +
-			" WHERE jlgid=" + m_logid + ";\n" +
+		// Get current user
+		std::string currentUser = m_threadConn->ExecuteScalar("SELECT current_user");
 
-			"UPDATE pgagent.pga_job " +
-			"   SET jobagentid=NULL, jobnextrun=NULL " +
-			" WHERE jobid=" + m_jobid
+		// Get job state before update
+		DBresultPtr oldState = m_threadConn->Execute(
+			"SELECT row_to_json(j)::jsonb as job_state FROM pgagent.pga_job j WHERE j.jobid=" + m_jobid);
+		std::string jobState = oldState ? m_threadConn->qtDbString(oldState->GetString("job_state")) : "NULL";
+
+		// Log job execution completion
+		std::string status_info = "Job execution completed with status: " + m_status;
+		std::string auditQuery = "SELECT pgagent.pga_log_job_operation(" + m_jobid +
+								 ", 'EXECUTE', " + m_threadConn->qtDbString(currentUser) +
+								 ", " + jobState + ", NULL, '" + status_info + "')";
+		m_threadConn->ExecuteVoid(auditQuery);
+
+		// Update job log and job table
+		m_threadConn->ExecuteVoid(
+			"UPDATE pgagent.pga_joblog SET jlgstatus='" + m_status + "', jlgduration=now() - jlgstart WHERE jlgid=" + m_logid + ";\n" +
+			"UPDATE pgagent.pga_job SET jobagentid=NULL, jobnextrun=NULL WHERE jobid=" + m_jobid
 		);
 	}
-	m_threadConn->Return();
 
+	m_threadConn->Return();
 	LogMessage("Completed job: " + m_jobid, LOG_DEBUG);
 	NotifyJobStatus(m_jobid, "completed","");
-
 }
 
+
+void Job::SetStatus(const std::string &status)
+{
+	m_status = status;
+}
+
+bool Job::CheckDependencies()
+{
+	LogMessage("Checking dependencies for job: " + m_jobid, LOG_DEBUG);
+
+	// Fetch all job dependencies
+	DBresultPtr res = m_threadConn->Execute(
+		"SELECT dependent_jobid FROM pgagent.pga_job_dependency WHERE jobid = " + m_jobid);
+
+	if (!res || res->RowsAffected() == 0)
+	{
+		LogMessage("No dependencies found for job: " + m_jobid, LOG_DEBUG);
+		return true; // No dependencies, so the job can run
+	}
+
+	while (res->HasData())
+	{
+		std::string depJobId = res->GetString("dependent_jobid");
+
+		// Check if the dependent job completed successfully
+		DBresultPtr depRes = m_threadConn->Execute(
+			"SELECT jlgstatus FROM pgagent.pga_joblog "
+			"WHERE jlgjobid = " +
+			depJobId +
+			" ORDER BY jlgstart DESC LIMIT 1");
+
+		if (!depRes || depRes->RowsAffected() == 0)
+		{
+			LogMessage("Dependency job " + depJobId + " has no execution logs. Cannot proceed.", LOG_WARNING);
+			return false;
+		}
+
+		std::string depStatus = depRes->GetString("jlgstatus");
+
+		if (depStatus != "s") // 's' means success
+		{
+			LogMessage("Dependency job " + depJobId + " did not complete successfully. Status: " + depStatus, LOG_WARNING);
+			return false;
+		}
+
+		res->MoveNext();
+	}
+
+	LogMessage("All dependencies satisfied for job: " + m_jobid, LOG_DEBUG);
+	return true;
+}
 
 int Job::Execute()
 {
@@ -93,7 +177,8 @@ int Job::Execute()
 		"SELECT * "
 		"  FROM pgagent.pga_jobstep "
 		" WHERE jstenabled "
-		"   AND jstjobid=" + m_jobid +
+		"   AND jstjobid=" +
+		m_jobid +
 		" ORDER BY jstname, jstid");
 
 	if (!steps)
@@ -445,12 +530,10 @@ JobThread::JobThread(const std::string &jid)
 	LogMessage("Creating job thread for job " + m_jobid, LOG_DEBUG);
 }
 
-
 JobThread::~JobThread()
 {
 	LogMessage("Destroying job thread for job " + m_jobid, LOG_DEBUG);
 }
-
 
 void JobThread::operator()()
 {
@@ -465,12 +548,23 @@ void JobThread::operator()()
 
 		if (job.Runnable())
 		{
-			job.Execute();
+			if (job.CheckDependencies())
+			{
+				job.Execute();
+			}
+			else
+			{
+				// Set the job status to 'x' to indicate dependency failure
+				LogMessage("Job " + m_jobid + " cannot run due to unmet dependencies.", LOG_WARNING);
+				job.SetStatus("x");
+			}
 		}
+
 		else
 		{
 			LogMessage("Failed to launch the thread for job " + m_jobid +
-			". Inserting an entry to the joblog table with status 'i'", LOG_WARNING);
+						   ". Inserting an entry to the joblog table with status 'i'",
+					   LOG_WARNING);
 
 			// Failed to launch the thread. Insert an entry with
 			// "internal error" status in the joblog table, to leave

@@ -39,8 +39,6 @@ private:
 
 class DBconn
 {
-private:
-    std::string lastNotification;  // Store last notification
 
 protected:
 	DBconn(const std::string& connStr);
@@ -50,8 +48,6 @@ public:
 	static DBconn     *Get(const std::string &connStr="", const std::string &db="");
 	static DBconn     *InitConnection(const std::string &connectString);
 
-	bool PollNotification();
-    std::string GetLastNotification();  // ✅ Declare the function
 	static void        ClearConnections(bool allIncludingPrimary = false);
 
 	std::string        qtDbString(const std::string &value);
@@ -209,4 +205,5 @@ protected:
 };
 
 #endif // CONNECTION_H
+
 

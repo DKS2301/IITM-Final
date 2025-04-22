@@ -127,6 +127,27 @@ ELSE()
 ENDIF()
 
 ################################################################################
+# Find and Link Hiredis
+################################################################################
+# Try to find system-installed hiredis first
+FIND_PATH(HIREDIS_INCLUDE_DIR hiredis/hiredis.h)
+FIND_LIBRARY(HIREDIS_LIBRARY hiredis)
+
+# If not found, build from submodule
+IF(NOT HIREDIS_INCLUDE_DIR OR NOT HIREDIS_LIBRARY)
+    MESSAGE(STATUS "hiredis not found, building from source...")
+    
+    # Add subdirectory (assumes hiredis source is in external/hiredis)
+    ADD_SUBDIRECTORY(external/hiredis)
+
+    SET(HIREDIS_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/hiredis)
+    SET(HIREDIS_LIBRARY hiredis)  # hiredis is the target name after add_subdirectory
+ENDIF()
+
+INCLUDE_DIRECTORIES(${HIREDIS_INCLUDE_DIR})
+LINK_LIBRARIES(${HIREDIS_LIBRARY})
+
+################################################################################
 # Let's rock!
 ################################################################################
 INCLUDE_DIRECTORIES(${pgagent_SOURCE_DIR}
@@ -148,7 +169,7 @@ TARGET_LINK_LIBRARIES(
 )
 ELSE()
 TARGET_LINK_LIBRARIES(
-        pgagent ${PG_LIBRARIES} ${Boost_LIBRARIES}
+        pgagent ${PG_LIBRARIES} ${Boost_LIBRARIES} ${CURL_LIBRARIES}
 )
 ENDIF()
 
