@@ -98,11 +98,29 @@ define('pgadmin.node.pga_job', [
           name: 'run_now_pga_job', node: 'pga_job', module: this,
           applies: ['object', 'context'], callback: 'run_pga_job_now',
           priority: 4, label: gettext('Run now'), data: {action: 'create'},
+        }, {
+          name: 'job_audit_log', node: 'coll-pga_job', module: this,
+          applies: ['object', 'context'], callback: 'show_job_audit_log',
+          priority: 5, label: gettext('Job Audit Log (All)'), icon: 'fa fa-history',
+        }, {
+          name: 'job_audit_log_create', node: 'coll-pga_job', module: this,
+          applies: ['object', 'context'], callback: 'show_job_audit_log_create',
+          priority: 5, label: gettext('Job Audit Log (Create)'), icon: 'fa fa-plus',
+        }, {
+          name: 'job_audit_log_modify', node: 'coll-pga_job', module: this,
+          applies: ['object', 'context'], callback: 'show_job_audit_log_modify',
+          priority: 5, label: gettext('Job Audit Log (Modify)'), icon: 'fa fa-edit',
+        }, {
+          name: 'job_audit_log_delete', node: 'coll-pga_job', module: this,
+          applies: ['object', 'context'], callback: 'show_job_audit_log_delete',
+          priority: 5, label: gettext('Job Audit Log (Delete)'), icon: 'fa fa-trash',
+        }, {
+          name: 'job_audit_log_execute', node: 'coll-pga_job', module: this,
+          applies: ['object', 'context'], callback: 'show_job_audit_log_execute',
+          priority: 5, label: gettext('Job Audit Log (Execute)'), icon: 'fa fa-play',
         }]);
-        
-        // It will automatically detect browser state and handle initialization
         this.setupJobStatusListener();
-        
+                
         console.log('pgAgent job module initialization complete');
       },
 
@@ -725,6 +743,110 @@ define('pgadmin.node.pga_job', [
           console.error('[pgAgent] Error disconnecting socket:', error);
           return false;
         }
+      },
+      /* Common function for all Job Audit Log operations */
+      _copy_job_audit_log_query: function(args, operation) {
+        let input = args || {},
+          t = pgBrowser.tree,
+          i = input.item || t.selected(),
+          d = i ? t.itemData(i) : undefined;
+
+        if (!d) {
+          pgAdmin.Browser.notifier.error(gettext('No item selected.'));
+          return false;
+        }
+
+        // Find the server node so we know what database to connect to
+        let serverNode = i;
+        let serverData = d;
+        
+        if (d._type !== 'server') {
+          // Navigate up to find the server
+          while (serverData && serverData._type !== 'server' && serverNode) {
+            serverNode = t.parent(serverNode);
+            if (serverNode) {
+              serverData = t.itemData(serverNode);
+            }
+          }
+        }
+
+        if (!serverNode || !serverData || serverData._type !== 'server') {
+          pgAdmin.Browser.notifier.error(gettext('Could not find server node.'));
+          return false;
+        }
+
+        try {
+          // Build the query based on operation type
+          let query = 'SELECT * FROM pgagent.pga_job_audit_log';
+          
+          // Add WHERE clause if operation is specified
+          if (operation) {
+            query += ' WHERE operation_type = ' + '\''+operation + '\'';
+          }
+          
+          // Add ORDER BY clause
+          query += ' ORDER BY operation_time DESC;';
+          
+          // Create a temporary textarea to copy the query
+          const tempTextArea = document.createElement('textarea');
+          tempTextArea.value = query;
+          document.body.appendChild(tempTextArea);
+          tempTextArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(tempTextArea);
+          
+          // Show success message with operation type
+          let operationLabel = operation ? operation : 'All';
+          pgAdmin.Browser.notifier.success(
+            gettext('SQL query for ' + operationLabel + ' operations copied to clipboard. Paste into the query tool and execute.')
+          );
+          
+          // Now open the query tool 
+          pgAdmin.Browser.Node.callbacks.show_query_tool({}, serverNode);
+          
+        } catch (error) {
+          pgAdmin.Browser.notifier.error(gettext('Error: ') + error.message);
+        }
+        
+        return false;
+      },
+
+      /* Show Job Audit Log - All operations */
+      show_job_audit_log: function(args) {
+        return this._copy_job_audit_log_query(args, null);
+      },
+      
+      /* Show Job Audit Log - Create operations */
+      show_job_audit_log_create: function(args) {
+        return this._copy_job_audit_log_query(args, 'CREATE');
+      },
+      
+      /* Show Job Audit Log - Modify operations */
+      show_job_audit_log_modify: function(args) {
+        return this._copy_job_audit_log_query(args, 'MODIFY');
+      },
+      
+      /* Show Job Audit Log - Delete operations */
+      show_job_audit_log_delete: function(args) {
+        return this._copy_job_audit_log_query(args, 'DELETE');
+      },
+      
+      /* Show Job Audit Log - Execute operations */
+      show_job_audit_log_execute: function(args) {
+        return this._copy_job_audit_log_query(args, 'EXECUTE');
+      },
+      /* Refresh the jobs list after creating a new job */
+      onSave: function(isNew, data) {
+        let obj = this;
+        return obj.nodeAjax('create', data, {}, function(res) {
+          if (res.success) {
+            // Refresh the jobs list by invalidating the cache
+            let cacheNode = pgAdmin.Browser.Nodes['server'];
+            if (cacheNode) {
+              cacheNode.cache(obj.type + '#jobs', {}, 'server', null);
+            }
+          }
+        });
       }
     });
   }
