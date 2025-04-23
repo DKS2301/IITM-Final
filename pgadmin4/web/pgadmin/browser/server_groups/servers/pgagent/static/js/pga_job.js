@@ -131,6 +131,13 @@ define('pgadmin.node.pga_job', [
               cacheLevel: 'server',
               cacheNode: 'server'
             })
+          ,
+            jobs: ()=>getNodeAjaxOptions('jobs', this, treeNodeInfo, itemNodeData, {
+              cacheLevel: 'server',
+              cacheNode: 'server',
+              urlWithId: true,
+              useCache: false
+            })
           },
           () => getNodePgaJobStepSchema(treeNodeInfo, itemNodeData),
         );

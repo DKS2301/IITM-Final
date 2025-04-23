@@ -843,7 +843,7 @@ SELECT EXISTS(
 
         row['jschedules'] = rset['rows']
 
-        # Get job dependencies
+         # Get job dependencies
         status, rset = self.conn.execute_dict(
             render_template(
                 "/".join([self.template_path, 'dependencies.sql']),
@@ -892,6 +892,7 @@ SELECT EXISTS(
             status=200
         )
 
+
     @check_precondition
     def create(self, gid, sid):
         """Create the pgAgent job."""
@@ -928,6 +929,20 @@ SELECT EXISTS(
         if not status:
             self.conn.execute_void('END')
             return internal_server_error(errormsg=res)
+
+        job_id = res
+            
+        # Insert dependencies if any
+        if 'jdependencies' in data and len(data['jdependencies']) > 0:
+            status, res = self.conn.execute_void(
+                render_template(
+                    "/".join([self.template_path, 'create_dependencies.sql']),
+                    data=data, conn=self.conn, jid=job_id
+                )
+            )
+            if not status:
+                self.conn.execute_void('END')
+                return internal_server_error(errormsg=res)
 
         # We need oid of newly created database
         status, res = self.conn.execute_dict(
@@ -972,6 +987,17 @@ SELECT EXISTS(
         )
 
         if not status:
+            return internal_server_error(errormsg=res)
+         # Update dependencies
+        status, res = self.conn.execute_void(
+            render_template(
+                "/".join([self.template_path, 'update_dependencies.sql']),
+                data=data, conn=self.conn, jid=jid
+            )
+        )
+
+        if not status:
+            self.conn.execute_void('END')
             return internal_server_error(errormsg=res)
 
         # We need oid of newly created database

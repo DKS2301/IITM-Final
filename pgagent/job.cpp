@@ -84,7 +84,6 @@ Job::Job(DBconn *conn, const std::string &jid)
 		}
 	}
 }
-}
 
 Job::~Job()
 {
@@ -177,8 +176,7 @@ int Job::Execute()
 		"SELECT * "
 		"  FROM pgagent.pga_jobstep "
 		" WHERE jstenabled "
-		"   AND jstjobid=" +
-		m_jobid +
+		"   AND jstjobid=" + m_jobid +
 		" ORDER BY jstname, jstid");
 
 	if (!steps)

@@ -155,6 +155,36 @@ END;
 ' LANGUAGE 'plpgsql' VOLATILE;
 
 
+-- Table to track job dependencies
+CREATE TABLE pgagent.pga_job_dependency (
+    jobid INTEGER NOT NULL,           -- The job that has a dependency
+    dependent_jobid INTEGER NOT NULL, -- The job that must complete first
+    PRIMARY KEY (jobid, dependent_jobid),  -- Composite primary key
+    CONSTRAINT fk_job FOREIGN KEY (jobid) REFERENCES pgagent.pga_job(jobid) ON DELETE CASCADE,
+    CONSTRAINT fk_dependent_job FOREIGN KEY (dependent_jobid) REFERENCES pgagent.pga_job(jobid) ON DELETE CASCADE
+);
+
+CREATE TABLE pgagent.pga_job_audit_log (
+    audit_id          serial               NOT NULL PRIMARY KEY,
+    job_id            int4                 NOT NULL ,
+    operation_type    text                 NOT NULL CHECK (operation_type IN ('CREATE', 'MODIFY', 'DELETE', 'EXECUTE')),
+    operation_time    timestamptz          NOT NULL DEFAULT current_timestamp,
+    operation_user    text                 NOT NULL,
+    old_values        jsonb                NULL,
+    new_values        jsonb                NULL,
+    additional_info   text                 NULL
+) WITHOUT OIDS;
+
+CREATE INDEX pga_job_audit_log_jobid ON pgagent.pga_job_audit_log(job_id);
+CREATE INDEX pga_job_audit_log_operation_time ON pgagent.pga_job_audit_log(operation_time);
+
+COMMENT ON TABLE pgagent.pga_job_audit_log IS 'Audit log for pgAgent job operations';
+COMMENT ON COLUMN pgagent.pga_job_audit_log.operation_type IS 'Type of operation performed (CREATE, MODIFY, DELETE, EXECUTE)';
+COMMENT ON COLUMN pgagent.pga_job_audit_log.old_values IS 'Previous values of modified fields (for MODIFY operations)';
+COMMENT ON COLUMN pgagent.pga_job_audit_log.new_values IS 'New values of modified fields (for MODIFY operations)';
+COMMENT ON COLUMN pgagent.pga_job_audit_log.additional_info IS 'Additional information about the operation';
+
+
 CREATE OR REPLACE FUNCTION pgagent.pga_next_schedule(int4, timestamptz, timestamptz, _bool, _bool, _bool, _bool, _bool, _bool) RETURNS timestamptz AS '
 DECLARE
     jscid           ALIAS FOR $1;

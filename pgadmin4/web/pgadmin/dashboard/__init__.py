@@ -254,7 +254,9 @@ class DashboardModule(PgAdminModule):
             'dashboard.replication_stats',
             'dashboard.job_monitor',
             'dashboard.run_job',
-            'dashboard.job_log'
+            'dashboard.job_log',
+            'dashboard.audit_logs',
+            'dashboard.job_names',
         ] + pgd_replication.get_exposed_url_endpoints()
 
 
@@ -1143,3 +1145,70 @@ def job_log(sid=None, jobid=None):
             info=error_traceback,
             status=500
         )
+
+@blueprint.route('/audit_logs/<int:sid>',
+                 endpoint='audit_logs', methods=['GET'])
+@pga_login_required
+@check_precondition
+def audit_logs(sid=None):
+    """
+    This function returns pgAgent audit logs with optional filtering
+    :param sid: server id
+    :return: JSON response with audit logs
+    """
+    
+    if not sid:
+        return internal_server_error(errormsg=ERROR_SERVER_ID_NOT_SPECIFIED)
+    
+    # Get filter parameters from request
+    operation = request.args.get('operation', None)
+    username = request.args.get('username', None)
+    jobname = request.args.get('jobname', None)
+    start_date = request.args.get('start_date', None)
+    end_date = request.args.get('end_date', None)
+    
+    # Prepare template parameters
+    params = {
+        'operation': operation,
+        'username': username,
+        'jobname': jobname,
+        'start_date': start_date,
+        'end_date': end_date
+    }
+    
+    sql = render_template("/".join(['dashboard/sql/default', 'audit_logs.sql']), **params)
+    status, res = g.conn.execute_dict(sql)
+    
+    if not status:
+        return internal_server_error(errormsg=str(res))
+    
+    return ajax_response(
+        response=res['rows'],
+        status=200
+    )
+
+
+@blueprint.route('/job_names/<int:sid>',
+                 endpoint='job_names', methods=['GET'])
+@pga_login_required
+@check_precondition
+def job_names(sid=None):
+    """
+    This function returns all pgAgent job names for the dropdown
+    :param sid: server id
+    :return: JSON response with job names
+    """
+    
+    if not sid:
+        return internal_server_error(errormsg=ERROR_SERVER_ID_NOT_SPECIFIED)
+    
+    sql = render_template("/".join(['dashboard/sql/default', 'job_names.sql']))
+    status, res = g.conn.execute_dict(sql)
+    
+    if not status:
+        return internal_server_error(errormsg=str(res))
+    
+    return ajax_response(
+        response=res['rows'],
+        status=200
+    )
