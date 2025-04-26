@@ -701,7 +701,8 @@ class JobView(PGChildNodeView):
         'jobs': [{'get': 'jobs'}, {'get': 'jobs'}],
         'children': [{'get': 'children'}],
         'stats': [{'get': 'statistics'}],
-        'audit_log': [{'get': 'audit_log'}]
+        'audit_log': [{'get': 'audit_log'}],
+        'dependency_graph': [{'get': 'dependency_graph'}]
     })
 
     def check_precondition(f):
@@ -1321,6 +1322,64 @@ SELECT EXISTS(
             response=res,
             status=200
         )
+
+    @check_precondition
+    def dependency_graph(self, gid, sid):
+        """Get the job dependency graph data."""
+        try:
+            # Get all jobs
+            status, jobs = self.conn.execute_dict(
+                render_template(
+                    "/".join([self.template_path, self._NODES_SQL]),
+                    conn=self.conn
+                )
+            )
+            if not status:
+                return internal_server_error(errormsg=jobs)
+
+            # Get all dependencies
+            status, deps = self.conn.execute_dict(
+                render_template(
+                    "/".join([self.template_path, 'dependencies.sql']),
+                    conn=self.conn
+                )
+            )
+            if not status:
+                return internal_server_error(errormsg=deps)
+
+            # Build the graph data
+            nodes = []
+            edges = []
+            
+            # Add nodes for all jobs
+            for job in jobs['rows']:
+                nodes.append({
+                    'id': job['jobid'],
+                    'name': job['jobname'],
+                    'enabled': job['jobenabled'],
+                    'status': job['jlgstatus'],
+                    'next_run': job['jobnextrun'],
+                    'last_run': job['joblastrun']
+                })
+
+            # Add edges for all dependencies
+            for dep in deps['rows']:
+                edges.append({
+                    'source': dep['jobid'],
+                    'target': dep['dependent_jobid'],
+                    'dependent_jobname': dep['dependent_jobname']
+                })
+
+            return ajax_response(
+                response={
+                    'nodes': nodes,
+                    'edges': edges
+                },
+                status=200
+            )
+
+        except Exception as e:
+            return internal_server_error(errormsg=str(e))
 
     def format_schedule_step_data(self, data):
         """

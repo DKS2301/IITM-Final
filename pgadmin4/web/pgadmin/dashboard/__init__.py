@@ -257,6 +257,7 @@ class DashboardModule(PgAdminModule):
             'dashboard.job_log',
             'dashboard.audit_logs',
             'dashboard.job_names',
+            'dashboard.job_dependency_graph',
         ] + pgd_replication.get_exposed_url_endpoints()
 
 
@@ -1212,3 +1213,66 @@ def job_names(sid=None):
         response=res['rows'],
         status=200
     )
+
+@blueprint.route("/job_dependency_graph/<int:sid>", endpoint='job_dependency_graph')
+@pga_login_required
+@check_precondition
+def job_dependency_graph(sid):
+    """Get the job dependency graph data."""
+    try:
+        if not sid:
+            return internal_server_error(errormsg=ERROR_SERVER_ID_NOT_SPECIFIED)
+
+        # Get all jobs
+        status, jobs = g.conn.execute_dict(
+            render_template(
+                "/".join([g.template_path, 'jobs.sql'])
+            )
+        )
+        if not status:
+            return internal_server_error(errormsg=jobs)
+
+        # Get all dependencies
+        status, deps = g.conn.execute_dict(
+            render_template(
+                "/".join([g.template_path, 'dependencies.sql'])
+            )
+        )
+        if not status:
+            return internal_server_error(errormsg=deps)
+
+        # Build the graph data
+        nodes = []
+        edges = []
+        
+        # Add nodes for all jobs
+        for job in jobs['rows']:
+            nodes.append({
+                'id': job['jobid'],
+                'name': job['jobname'],
+                'enabled': job['jobenabled'],
+                'status': job['status'],
+                'next_run': job['jobnextrun'],
+                'last_run': job['joblastrun']
+            })
+
+        # Add edges for all dependencies
+        for dep in deps['rows']:
+            edges.append({
+                'source': dep['jobid'],
+                'target': dep['dependent_jobid'],
+                'dependent_jobname': dep['dependent_jobname']
+            })
+
+        return ajax_response(
+            response={
+                'dependency_graph': {
+                    'nodes': nodes,
+                    'links': edges
+                }
+            },
+            status=200
+        )
+
+    except Exception as e:
+        return internal_server_error(errormsg=str(e))

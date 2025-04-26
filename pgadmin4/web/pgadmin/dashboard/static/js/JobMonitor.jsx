@@ -35,7 +35,14 @@ import {
   Tooltip,
   Typography,
   useTheme,
-  Avatar
+  Avatar,
+  Drawer,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon,
+  Zoom,
+  Fade
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { AdapterMoment } from '@mui/x-date-pickers/AdapterMoment';
@@ -69,6 +76,11 @@ import FilterListIcon from '@mui/icons-material/FilterList';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import ArticleIcon from '@mui/icons-material/Article';
 import CloseIcon from '@mui/icons-material/Close';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong';
+import InfoIcon from '@mui/icons-material/Info';
 import SectionContainer from './components/SectionContainer';
 import getApiInstance from 'sources/api_instance';
 import url_for from 'sources/url_for';
@@ -79,6 +91,10 @@ import gettext from 'sources/gettext';
 import { io } from 'socket.io-client';
 import pgBrowser from 'sources/pgadmin';
 import pgAdmin from 'sources/pgadmin';
+import ForceGraph2D from 'react-force-graph-2d';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
 // Helper functions
 const formatDateTime = (dateTimeStr) => {
@@ -719,6 +735,30 @@ const formatErrorMessage = (description) => {
   return description.slice(0, 100) + (description.length > 100 ? '...' : '');
 };
 
+// Add the missing calculateNodeLevels function
+const calculateNodeLevels = (nodes, links) => {
+  const nodeMap = new Map(nodes.map(node => [node.id, node]));
+  const visited = new Set();
+  
+  const visit = (nodeId, level) => {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+    
+    const node = nodeMap.get(nodeId);
+    node.level = Math.max(node.level, level);
+    
+    // Visit all dependent nodes
+    links
+      .filter(link => link.source === nodeId)
+      .forEach(link => visit(link.target, level + 1));
+  };
+  
+  // Start with nodes that have no incoming links
+  nodes
+    .filter(node => !links.some(link => link.target === node.id))
+    .forEach(node => visit(node.id, 0));
+};
+
 export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeData, pageVisible = true}) {
   const [jobData, setJobData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -741,10 +781,17 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
   const [selectedJobFilter, setSelectedJobFilter] = useState('all');
   const [jobFilterAnchorEl, setJobFilterAnchorEl] = useState(null);
   const jobFilterOpen = Boolean(jobFilterAnchorEl);
-  const api = getApiInstance();
+  const [dependencyGraphData, setDependencyGraphData] = useState(null);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const graphRef = useRef(null);
   const theme = useTheme();
+  const api = getApiInstance();
   const [socket, setSocket] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [hoveredNodeId, setHoveredNodeId] = useState(null);
   
   // Initialize Chart.js
   useEffect(() => {
@@ -1600,6 +1647,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
 
           // Always refresh data for any status update
           fetchJobMonitorData();
+          fetchDependencyGraphData(); // Also refresh dependency graph
         };
 
         // Set up event listeners
@@ -1640,6 +1688,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
   useInterval(() => {
     if (pageVisible && autoRefresh && !socketConnected) {
       fetchJobMonitorData();
+      fetchDependencyGraphData(); // Also refresh dependency graph
     }
   }, 5000);
 
@@ -1706,13 +1755,15 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
       })
       .catch(error => {
         setLoading(false);
-            setError(error.response?.data?.errormsg || gettext('Error fetching job data'));
+        setError(error.response?.data?.errormsg || gettext('Error fetching job data'));
       });
   }, [sid, pageVisible]);
 
   // Handle refresh button click
   const handleRefresh = () => {
     setRefresh(!refresh);
+    fetchJobMonitorData();
+    fetchDependencyGraphData();
   };
 
   // Toggle auto refresh
@@ -1735,6 +1786,539 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
         </Tooltip>
         <RefreshButton onClick={handleRefresh} />
       </Box>
+    );
+  };
+
+  // Fix the fetchDependencyGraphData function
+  const fetchDependencyGraphData = async () => {
+    try {
+      setGraphLoading(true);
+      console.log('Fetching dependency graph data...');
+      
+      const url = url_for('dashboard.job_dependency_graph', {'sid': sid});
+      console.log('URL:', url);
+      
+      const response = await api.get(url);
+      console.log('Dependency graph response:', response);
+      
+      if (response.data && response.data.dependency_graph) {
+        // Process the graph data
+        const graphData = response.data.dependency_graph;
+        
+        // Check if we have nodes
+        if (!graphData.nodes || graphData.nodes.length === 0) {
+          console.warn('No nodes in dependency graph data');
+          setError(gettext('No jobs found in the database'));
+          setGraphLoading(false);
+          return;
+        }
+        
+        // Add node properties for visualization
+        graphData.nodes = graphData.nodes.map(node => ({
+          ...node,
+          val: 1, // Base size
+          color: getNodeColor(node.status, node.enabled),
+          label: node.name,
+          status: node.status, // Use the status directly from the SQL result
+          enabled: node.enabled,
+          level: 0, // Initialize level for topological sorting
+          incomingLinks: 0,
+          outgoingLinks: 0
+        }));
+        
+        // Add link properties for visualization
+        graphData.links = graphData.links.map(link => {
+          const sourceNode = graphData.nodes.find(n => n.id === link.source);
+          const targetNode = graphData.nodes.find(n => n.id === link.target);
+          
+          if (!sourceNode || !targetNode) {
+            console.warn('Missing source or target node for link:', link);
+            return null;
+          }
+          
+          return {
+            ...link,
+            source: sourceNode,
+            target: targetNode,
+            color: getEdgeColor(targetNode.status, targetNode.enabled),
+            width: 4,
+            strokeWidth: 2,
+            strokeDasharray: targetNode.enabled ? null : '5,5',
+            opacity: 0.8
+          };
+        }).filter(Boolean); // Remove any null links
+        
+        // Calculate node levels for hierarchical layout
+        calculateNodeLevels(graphData.nodes, graphData.links);
+        
+        console.log('Processed dependency graph data:', graphData);
+        setDependencyGraphData(graphData);
+      } else {
+        console.warn('Invalid dependency graph data format:', response);
+        setError(gettext('Invalid dependency graph data format'));
+      }
+    } catch (error) {
+      console.error('Error fetching dependency graph data:', error);
+      setError(error.response?.data?.errormsg || gettext('Error fetching dependency data'));
+    } finally {
+      setGraphLoading(false);
+    }
+  };
+
+  // Add new helper function for edge colors
+  const getEdgeColor = (status, enabled) => {
+    if (!enabled) return theme.palette.grey[500];
+    
+    // Convert status to lowercase for consistent comparison
+    const statusLower = status?.toLowerCase();
+    
+    switch(statusLower) {
+      case 'r':
+      case 'running':
+        return theme.palette.primary.main;
+      case 's':
+      case 'success':
+        return theme.palette.success.main;
+      case 'f':
+      case 'failed':
+        return theme.palette.error.main;
+      case 'd':
+      case 'disabled':
+        return theme.palette.warning.main;
+      default:
+        return theme.palette.grey[500];
+    }
+  };
+
+  // Get node color based on status and enabled state
+  const getNodeColor = (status, enabled) => {
+    if (!enabled) return theme.palette.grey[500];
+    
+    // Convert status to lowercase for consistent comparison
+    const statusLower = status?.toLowerCase();
+    
+    switch(statusLower) {
+      case 'r':
+      case 'running':
+        return theme.palette.primary.main;
+      case 's':
+      case 'success':
+        return theme.palette.success.main;
+      case 'f':
+      case 'failed':
+        return theme.palette.error.main;
+      case 'd':
+      case 'disabled':
+        return theme.palette.warning.main;
+      default:
+        return theme.palette.grey[500];
+    }
+  };
+
+  // Get node size based on dependencies
+  const getNodeSize = (node, graphData) => {
+    const incomingLinks = graphData.links.filter(link => link.target === node.id).length;
+    const outgoingLinks = graphData.links.filter(link => link.source === node.id).length;
+    const totalConnections = incomingLinks + outgoingLinks;
+    return Math.max(1, Math.min(3, 1 + (totalConnections * 0.2)));
+  };
+
+  // Handle node hover
+  const handleNodeHover = (node) => {
+    if (node) {
+      setHoveredNodeId(node.id);
+      setSelectedNode(node);
+    } else {
+      setHoveredNodeId(null);
+      setSelectedNode(null);
+    }
+  };
+
+  // Handle node click
+  const handleNodeClick = (node) => {
+    setSelectedNode(node);
+    setDrawerOpen(true);
+  };
+
+  // Handle zoom controls
+  const handleZoomIn = () => {
+    if (graphRef.current) {
+      graphRef.current.zoom(1.2, 400);
+      setZoomLevel(prev => prev * 1.2);
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (graphRef.current) {
+      graphRef.current.zoom(0.8, 400);
+      setZoomLevel(prev => prev * 0.8);
+    }
+  };
+
+  const handleResetView = () => {
+    if (graphRef.current) {
+      graphRef.current.centerAt(0, 0, 1000);
+      graphRef.current.zoom(1, 1000);
+      setZoomLevel(1);
+    }
+  };
+
+  // Function to reset the graph layout
+  const handleResetLayout = () => {
+    if (graphRef.current) {
+      try {
+        // Reset the simulation
+        if (typeof graphRef.current.d3ReheatSimulation === 'function') {
+          graphRef.current.d3ReheatSimulation();
+        }
+        
+        // Reset zoom and center
+        if (typeof graphRef.current.centerAt === 'function') {
+          graphRef.current.centerAt(0, 0, 1000);
+        }
+        
+        if (typeof graphRef.current.zoom === 'function') {
+          graphRef.current.zoom(1, 1000);
+          setZoomLevel(1);
+        }
+        
+        // Recalculate node levels
+        if (dependencyGraphData && dependencyGraphData.nodes && dependencyGraphData.links) {
+          calculateNodeLevels(dependencyGraphData.nodes, dependencyGraphData.links);
+        }
+        
+        // Force a redraw - check if forces exist before accessing them
+        if (graphRef.current.d3Force) {
+          const yForce = graphRef.current.d3Force('y');
+          const xForce = graphRef.current.d3Force('x');
+          
+          if (yForce && typeof yForce.strength === 'function') {
+            yForce.strength(0.1);
+          }
+          
+          if (xForce && typeof xForce.strength === 'function') {
+            xForce.strength(0.1);
+          }
+        }
+        
+        // After a short delay, freeze the simulation again
+        setTimeout(() => {
+          if (graphRef.current) {
+            graphRef.current.d3ReheatSimulation = () => {};
+          }
+        }, 1000);
+      } catch (error) {
+        console.error('Error resetting layout:', error);
+      }
+    }
+  };
+
+  // Fix the renderDependencyGraph function to use graphLoading instead of loading
+  const renderDependencyGraph = () => {
+    if (graphLoading) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+          <CircularProgress />
+        </Box>
+      );
+    }
+
+    if (error) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+          <Typography color="error">{error}</Typography>
+        </Box>
+      );
+    }
+
+    if (!dependencyGraphData || !dependencyGraphData.nodes || dependencyGraphData.nodes.length === 0) {
+      return (
+        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', gap: 2 }}>
+          <Typography>No dependency data available</Typography>
+          <Button
+            variant="contained"
+            startIcon={<RefreshIcon />}
+            onClick={() => fetchDependencyGraphData()}
+            size="small"
+          >
+            Refresh Dependencies
+          </Button>
+        </Box>
+      );
+    }
+
+    // Function to check if a node is connected to the hovered node
+    const isConnected = (node, hoveredNodeId) => {
+      if (!hoveredNodeId) return false;
+      
+      // Check if this node is the source of a link to the hovered node
+      const isSource = dependencyGraphData.links.some(
+        link => link.source.id === node.id && link.target.id === hoveredNodeId
+      );
+      
+      // Check if this node is the target of a link from the hovered node
+      const isTarget = dependencyGraphData.links.some(
+        link => link.source.id === hoveredNodeId && link.target.id === node.id
+      );
+      
+      return isSource || isTarget;
+    };
+
+    // Function to determine node color based on hover state
+    const getNodeColorWithHover = (node) => {
+      if (hoveredNodeId && (node.id === hoveredNodeId || isConnected(node, hoveredNodeId))) {
+        return theme.palette.warning.main;
+      }
+      return getNodeColor(node.status, node.enabled);
+    };
+
+    // Function to determine link color based on hover state
+    const getLinkColorWithHover = (link) => {
+      if (hoveredNodeId && (link.source.id === hoveredNodeId || link.target.id === hoveredNodeId)) {
+        return theme.palette.warning.main;
+      }
+      return link.color;
+    };
+
+    return (
+      <Box sx={{ position: 'relative', height: '100%', width: '100%' }}>
+        <Box sx={{ position: 'absolute', top: 10, right: 10, zIndex: 1, display: 'flex', gap: 1 }}>
+          <Tooltip title="Refresh Dependencies">
+            <IconButton
+              onClick={() => fetchDependencyGraphData()}
+              size="small"
+              sx={{ bgcolor: 'background.paper' }}
+            >
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Reset View">
+            <IconButton
+              onClick={handleResetView}
+              size="small"
+              sx={{ bgcolor: 'background.paper' }}
+            >
+              <CenterFocusStrongIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Reset Layout">
+            <IconButton
+              onClick={handleResetLayout}
+              size="small"
+              sx={{ bgcolor: 'background.paper' }}
+            >
+              <AutoFixHighIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
+        <ForceGraph2D
+          ref={graphRef}
+          graphData={dependencyGraphData}
+          nodeId="id"
+          nodeLabel="label"
+          nodeColor={getNodeColorWithHover}
+          nodeVal={node => getNodeSize(node, dependencyGraphData)}
+          linkColor={getLinkColorWithHover}
+          linkWidth={link => link.width}
+          linkCurvatureDirectional={0.1}
+          linkDirectionalArrowLength={5}
+          linkDirectionalArrowRelPos={0.5}
+          linkDirectionalArrowColor={link => link.color}
+          cooldownTicks={100}
+          onEngineStop={() => {
+            // Freeze the simulation after initial layout
+            if (graphRef.current) {
+              graphRef.current.d3ReheatSimulation = () => {};
+            }
+          }}
+          onNodeClick={handleNodeClick}
+          onNodeHover={handleNodeHover}
+          nodeCanvasObject={(node, ctx, globalScale) => {
+            const label = node.label;
+            const fontSize = 12/globalScale;
+            ctx.font = `bold ${fontSize}px Sans-Serif`;
+            const textWidth = ctx.measureText(label).width;
+            
+            // Calculate dimensions for rounded rectangle
+            const padding = 4;
+            const width = textWidth + padding * 2;
+            const height = fontSize + padding * 2;
+            const radius = 5; // Corner radius
+            // Draw rounded rectangle background
+            ctx.beginPath();
+            ctx.moveTo(node.x - width/2 + radius, node.y - height/2);
+            ctx.lineTo(node.x + width/2 - radius, node.y - height/2);
+            ctx.quadraticCurveTo(node.x + width/2, node.y - height/2, node.x + width/2, node.y - height/2 + radius);
+            ctx.lineTo(node.x + width/2, node.y + height/2 - radius);
+            ctx.quadraticCurveTo(node.x + width/2, node.y + height/2, node.x + width/2 - radius, node.y + height/2);
+            ctx.lineTo(node.x - width/2 + radius, node.y + height/2);
+            ctx.quadraticCurveTo(node.x - width/2, node.y + height/2, node.x - width/2, node.y + height/2 - radius);
+            ctx.lineTo(node.x - width/2, node.y - height/2 + radius);
+            ctx.quadraticCurveTo(node.x - width/2, node.y - height/2, node.x - width/2 + radius, node.y - height/2);
+            ctx.closePath();
+            
+            // Fill with node color with transparency
+            const nodeColor = getNodeColorWithHover(node);
+            ctx.fillStyle = nodeColor.startsWith('rgb') 
+              ? nodeColor.replace('rgb', 'rgba').replace(')', ', 0.8)')
+              : alpha(nodeColor, 0.8);
+            ctx.fill();
+            // Add a subtle border
+            ctx.strokeStyle = nodeColor;
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+            
+            // Draw node label
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = getContrastText(theme, nodeColor);
+            ctx.fillText(label, node.x, node.y);
+          }}
+        />
+        
+        {/* Controls */}
+        <Box sx={{ position: 'absolute', bottom: 16, right: 16, display: 'flex', gap: 1 }}>
+          <IconButton onClick={handleZoomIn} size="small" sx={{ bgcolor: 'background.paper' }}>
+            <ZoomInIcon fontSize="small" />
+          </IconButton>
+          <IconButton onClick={handleZoomOut} size="small" sx={{ bgcolor: 'background.paper' }}>
+            <ZoomOutIcon fontSize="small" />
+          </IconButton>
+          <IconButton onClick={handleResetView} size="small" sx={{ bgcolor: 'background.paper' }}>
+            <RestartAltIcon fontSize="small" />
+          </IconButton>
+          <Tooltip title={gettext('Reset Layout')}>
+            <IconButton onClick={handleResetLayout} size="small" sx={{ bgcolor: 'background.paper' }}>
+              <RefreshIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+        
+        {/* Legend */}
+        <Box sx={{ position: 'absolute', top: 16, right: 16, bgcolor: 'background.paper', p: 1, borderRadius: 1, boxShadow: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>Legend</Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: getNodeColor('s', true) }} />
+              <Typography variant="body2">Success</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: getNodeColor('f', true) }} />
+              <Typography variant="body2">Failed</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: getNodeColor('r', true) }} />
+              <Typography variant="body2">Running</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: getNodeColor(null, false) }} />
+              <Typography variant="body2">Disabled</Typography>
+            </Box>
+          </Box>
+        </Box>
+        
+        {/* Node details panel */}
+        {selectedNode && renderNodeDetails()}
+      </Box>
+    );
+  };
+
+  // Render node details drawer
+  const renderNodeDetails = () => {
+    if (!selectedNode) return null;
+
+    return (
+      <Drawer
+        anchor="right"
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        PaperProps={{
+          sx: {
+            width: 320,
+            bgcolor: theme.palette.background.paper
+          }
+        }}
+      >
+        <Box sx={{ p: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" sx={{ color: theme.palette.text.primary }}>{selectedNode.name}</Typography>
+            <IconButton onClick={() => setDrawerOpen(false)} size="small">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+          
+          <List>
+            <ListItem>
+              <ListItemIcon>
+                <Chip
+                  size="small"
+                  label={selectedNode.status || gettext('Unknown')}
+                  sx={{
+                    bgcolor: alpha(getNodeColor(selectedNode.status, selectedNode.enabled), 0.1),
+                    color: getNodeColor(selectedNode.status, selectedNode.enabled)
+                  }}
+                />
+              </ListItemIcon>
+              <ListItemText primary={gettext('Status')} primaryTypographyProps={{ color: theme.palette.text.primary }} />
+            </ListItem>
+            
+            <ListItem>
+              <ListItemIcon>
+                <Chip
+                  size="small"
+                  label={selectedNode.enabled ? gettext('Enabled') : gettext('Disabled')}
+                  sx={{
+                    bgcolor: alpha(selectedNode.enabled ? theme.palette.success.main : theme.palette.grey[500], 0.1),
+                    color: selectedNode.enabled ? theme.palette.success.main : theme.palette.grey[500]
+                  }}
+                />
+              </ListItemIcon>
+              <ListItemText primary={gettext('Enabled')} primaryTypographyProps={{ color: theme.palette.text.primary }} />
+            </ListItem>
+            
+            {selectedNode.next_run && (
+              <ListItem>
+                <ListItemIcon>
+                  <ScheduleIcon color="action" />
+                </ListItemIcon>
+                <ListItemText 
+                  primary={gettext('Next Run')} 
+                  secondary={formatDateTime(selectedNode.next_run)}
+                  primaryTypographyProps={{ color: theme.palette.text.primary }}
+                  secondaryTypographyProps={{ color: theme.palette.text.primary }}
+                />
+              </ListItem>
+            )}
+            
+            {selectedNode.last_run && (
+              <ListItem>
+                <ListItemIcon>
+                  <AccessTimeIcon color="action" />
+                </ListItemIcon>
+                <ListItemText 
+                  primary={gettext('Last Run')} 
+                  secondary={formatDateTime(selectedNode.last_run)}
+                  primaryTypographyProps={{ color: theme.palette.text.primary }}
+                  secondaryTypographyProps={{ color: theme.palette.text.primary }}
+                />
+              </ListItem>
+            )}
+          </List>
+          
+          <Button
+            variant="outlined"
+            fullWidth
+            startIcon={<ArticleIcon />}
+            onClick={() => {
+              setDrawerOpen(false);
+              handleViewLog(selectedNode);
+            }}
+            sx={{ mt: 2 }}
+          >
+            {gettext('View Log')}
+          </Button>
+        </Box>
+      </Drawer>
     );
   };
 
@@ -1783,10 +2367,13 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
             >
               <Tab label={gettext('Jobs')} />
               <Tab label={gettext('Analytics')} />
+              <Tab label={gettext('Dependencies')} icon={<AccountTreeIcon />} />
             </Tabs>
             
             <Box sx={{ mt: 2 }}>
-              {tabValue === 0 ? renderJobTabs() : renderCharts()}
+              {tabValue === 0 ? renderJobTabs() : 
+               tabValue === 1 ? renderCharts() : 
+               renderDependencyGraph()}
             </Box>
           </Box>
         </ScrollableContainer>
@@ -1817,7 +2404,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
             </IconButton>
           </DialogTitle>
           <DialogContent>
-            <DialogContentText sx={{ mb: 2 }}>
+            <DialogContentText sx={{ mb: 2, color: theme.palette.primary.main }}>
               {gettext('Select a custom date range for filtering job history data.')}
             </DialogContentText>
             <Grid2 container spacing={2}>
@@ -1879,7 +2466,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
           alignItems: 'center',
           borderBottom: `1px solid ${theme.palette.divider}`
         }}>
-          <Box>
+          <Box sx={{ color: theme.palette.primary.main }}>
             {selectedJob && gettext(`Job Log for "${selectedJob.jobname}"`)}
           </Box>
           <IconButton onClick={handleCloseJobLog} size="small">
@@ -1889,7 +2476,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
         <DialogContent sx={{ 
           p: 0, 
           backgroundColor: theme.palette.background.default,
-          color: theme.palette.text.primary 
+          color: theme.palette.primary.main 
         }}>
           {loadingLog ? (
             <Box sx={{ p: 2 }}>
@@ -1924,18 +2511,18 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                     {log.status === 'Failed' && log.error_details && renderErrorDetails(log.error_details)}
                     
                     {/* Rest of the existing log entry content */}
-                    <Typography variant="h6" sx={{ color: theme.palette.text.primary, mb: 1 }}>
+                    <Typography variant="h6" sx={{ color: theme.palette.primary.main, mb: 1 }}>
                       {gettext('Run')} #{log.jlgid} - {log.status}
                     </Typography>
                     
                     <Grid2 container spacing={2} sx={{ mb: 2 }}>
                       <Grid2 item xs={12} sm={6}>
-                        <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
+                        <Typography variant="body2" sx={{ color: theme.palette.primary.main }}>
                           <strong>{gettext('Start Time')}:</strong> {formatDateTime(log.jlgstart)}
                         </Typography>
                       </Grid2>
                       <Grid2 item xs={12} sm={6}>
-                        <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
+                        <Typography variant="body2" sx={{ color: theme.palette.primary.main }}>
                           <strong>{gettext('Duration')}:</strong> {formatDuration(log.jlgduration)}
                         </Typography>
                       </Grid2>
@@ -1943,7 +2530,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                     
                     <Divider sx={{ my: 2 }} />
                     
-                    <Typography variant="subtitle1" sx={{ color: theme.palette.text.primary, mb: 1 }}>
+                    <Typography variant="subtitle1" sx={{ color: theme.palette.primary.main, mb: 1 }}>
                       {gettext('Steps')}
                     </Typography>
                     
@@ -1965,7 +2552,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                             }}
                           >
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                              <Typography variant="subtitle2" sx={{ color: theme.palette.text.primary }}>
+                              <Typography variant="subtitle2" sx={{ color: theme.palette.primary.main }}>
                                 {step.step_name || gettext('Step')} #{stepIndex + 1}
                               </Typography>
                               <JobStatusChip 
@@ -1976,19 +2563,19 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                             </Box>
                             
                             {step.step_desc && (
-                              <Typography variant="body2" sx={{ color: theme.palette.text.primary, mb: 1 }}>
+                              <Typography variant="body2" sx={{ color: theme.palette.primary.main, mb: 1 }}>
                                 {step.step_desc}
                               </Typography>
                             )}
                             
                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 1 }}>
                               {step.start_time && (
-                                <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
+                                <Typography variant="body2" sx={{ color: theme.palette.primary.main }}>
                                   <strong>{gettext('Start')}:</strong> {formatDateTime(step.start_time)}
                                 </Typography>
                               )}
                               {step.duration && (
-                                <Typography variant="body2" sx={{ color: theme.palette.text.primary }}>
+                                <Typography variant="body2" sx={{ color: theme.palette.primary.main }}>
                                   <strong>{gettext('Duration')}:</strong> {formatDuration(step.duration)}
                                 </Typography>
                               )}
@@ -1996,7 +2583,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                             
                             {step.output && (
                               <Box sx={{ mt: 1 }}>
-                                <Typography variant="subtitle2" sx={{ color: theme.palette.text.primary, mb: 0.5 }}>
+                                <Typography variant="subtitle2" sx={{ color: theme.palette.primary.main, mb: 0.5 }}>
                                   {gettext('Output')}
                                 </Typography>
                                 <Paper 
@@ -2007,7 +2594,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                                     overflow: 'auto',
                                     fontFamily: 'monospace',
                                     fontSize: '0.85rem',
-                                    color: theme.palette.text.primary,
+                                    color: theme.palette.primary.main,
                                     whiteSpace: 'pre-wrap',
                                     wordBreak: 'break-all'
                                   }}
@@ -2020,7 +2607,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                         ))}
                       </Box>
                     ) : (
-                      <Typography variant="body2" sx={{ color: theme.palette.text.primary, fontStyle: 'italic' }}>
+                      <Typography variant="body2" sx={{ color: theme.palette.primary.main, fontStyle: 'italic' }}>
                         {gettext('No step information available')}
                       </Typography>
                     )}
@@ -2030,7 +2617,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
             </Box>
           ) : (
             <Box sx={{ p: 2 }}>
-              <Typography variant="body2" sx={{ color: theme.palette.text.primary, fontStyle: 'italic' }}>
+              <Typography variant="body2" sx={{ color: theme.palette.primary.main, fontStyle: 'italic' }}>
                 {gettext('No log information available for this job')}
               </Typography>
             </Box>
@@ -2040,6 +2627,9 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
           <Button onClick={handleCloseJobLog} variant="outlined">{gettext('Close')}</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Node Details Drawer */}
+      {renderNodeDetails()}
     </SectionContainer>
   );
 }
