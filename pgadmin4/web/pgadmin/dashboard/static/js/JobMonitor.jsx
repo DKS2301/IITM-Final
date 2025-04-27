@@ -12,11 +12,9 @@ import {
   Box, 
   Button,
   Card,
-  CardContent,
   Chip,
   CircularProgress,
   Collapse,
-  Container,
   Dialog,
   DialogActions,
   DialogContent,
@@ -27,8 +25,9 @@ import {
   IconButton,
   LinearProgress,
   Menu,
-  MenuItem,
+  MenuItem, 
   Paper,
+  Skeleton,
   Tab,
   Tabs,
   TextField,
@@ -40,9 +39,7 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon,
-  Zoom,
-  Fade
+  ListItemIcon
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { AdapterMoment } from '@mui/x-date-pickers/AdapterMoment';
@@ -80,7 +77,6 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import CenterFocusStrongIcon from '@mui/icons-material/CenterFocusStrong';
-import InfoIcon from '@mui/icons-material/Info';
 import SectionContainer from './components/SectionContainer';
 import getApiInstance from 'sources/api_instance';
 import url_for from 'sources/url_for';
@@ -89,7 +85,6 @@ import RefreshButton from './components/RefreshButtons';
 import EmptyPanelMessage from '../../../static/js/components/EmptyPanelMessage';
 import gettext from 'sources/gettext';
 import { io } from 'socket.io-client';
-import pgBrowser from 'sources/pgadmin';
 import pgAdmin from 'sources/pgadmin';
 import ForceGraph2D from 'react-force-graph-2d';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -127,17 +122,26 @@ const getContrastText = (theme, bgColor) => {
 };
 
 const StatCardItem = ({ title, value, status, icon }) => {
+  StatCardItem.propTypes = {
+    title: PropTypes.string.isRequired,
+    value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    status: PropTypes.string.isRequired,
+    icon: PropTypes.element.isRequired,
+  };
+  StatCardItem.propTypes = {
+
+  };
   const theme = useTheme();
   
   const getStatusColor = () => {
     switch(status) {
-      case 'total': return theme.palette.info.main;
-      case 'enabled': return theme.palette.success.main;
-      case 'disabled': return theme.palette.warning.main;
-      case 'running': return theme.palette.primary.main;
-      case 'success': return theme.palette.success.main;
-      case 'failed': return theme.palette.error.main;
-      default: return theme.palette.grey[500];
+    case 'total': return theme.palette.info.main;
+    case 'enabled': return theme.palette.success.main;
+    case 'disabled': return theme.palette.warning.main;
+    case 'running': return theme.palette.primary.main;
+    case 'success': return theme.palette.success.main;
+    case 'failed': return theme.palette.error.main;
+    default: return theme.palette.grey[500];
     }
   };
 
@@ -273,14 +277,14 @@ const StyledProgressBar = (props) => {
   const theme = useTheme();
   const getStatusColor = () => {
     switch(props.status?.toLowerCase()) {
-      case 'running': return theme.palette.primary.main;
-      case 'success': 
-      case 'enabled': return theme.palette.success.main;
-      case 'failed': 
-      case 'aborted': 
-      case 'internal error': return theme.palette.error.main;
-      case 'disabled': return theme.palette.warning.main;
-      default: return theme.palette.grey[500];
+    case 'running': return theme.palette.primary.main;
+    case 'success': 
+    case 'enabled': return theme.palette.success.main;
+    case 'failed': 
+    case 'aborted': 
+    case 'internal error': return theme.palette.error.main;
+    case 'disabled': return theme.palette.warning.main;
+    default: return theme.palette.grey[500];
     }
   };
   
@@ -309,14 +313,14 @@ const JobDetailsPanel = (props) => {
   const theme = useTheme();
   const getStatusColor = () => {
     switch(props.status?.toLowerCase()) {
-      case 'running': return theme.palette.primary.main;
-      case 'success': 
-      case 'enabled': return theme.palette.success.main;
-      case 'failed': 
-      case 'aborted': 
-      case 'internal error': return theme.palette.error.main;
-      case 'disabled': return theme.palette.warning.main;
-      default: return theme.palette.grey[500];
+    case 'running': return theme.palette.primary.main;
+    case 'success': 
+    case 'enabled': return theme.palette.success.main;
+    case 'failed': 
+    case 'aborted': 
+    case 'internal error': return theme.palette.error.main;
+    case 'disabled': return theme.palette.warning.main;
+    default: return theme.palette.grey[500];
     }
   };
   
@@ -634,7 +638,7 @@ const JobRow = ({ job, onViewLog }) => {
               </Typography>
               <Typography variant="body2">
                 {job.jobnextrun || job.next_run ? formatDateTime(job.jobnextrun || job.next_run) : 
-                 job.jobenabled ? gettext('Not scheduled') : gettext('Job disabled')}
+                  job.jobenabled ? gettext('Not scheduled') : gettext('Job disabled')}
               </Typography>
             </Grid2>
             <Grid2 item xs={12} sm={6} md={3}>
@@ -643,8 +647,8 @@ const JobRow = ({ job, onViewLog }) => {
               </Typography>
               <Typography variant="body2">
                 {job.jobenabled !== undefined ? (job.jobenabled ? gettext('Yes') : gettext('No')) : 
-                 (jobStatus.toLowerCase() === 'enabled' ? gettext('Yes') : 
-                  jobStatus.toLowerCase() === 'disabled' ? gettext('No') : gettext('Unknown'))}
+                  (jobStatus.toLowerCase() === 'enabled' ? gettext('Yes') : 
+                    jobStatus.toLowerCase() === 'disabled' ? gettext('No') : gettext('Unknown'))}
               </Typography>
             </Grid2>
           </Grid2>
@@ -759,13 +763,92 @@ const calculateNodeLevels = (nodes, links) => {
     .forEach(node => visit(node.id, 0));
 };
 
-export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeData, pageVisible = true}) {
+// Add the renderErrorDetails function
+const renderErrorDetails = (errorDetails) => {
+  if (!errorDetails) return null;
+  
+  const theme = useTheme();
+  
+  return (
+    <Paper 
+      sx={{ 
+        p: 2, 
+        mb: 2, 
+        bgcolor: alpha(theme.palette.error.main, 0.05),
+        border: '1px solid',
+        borderColor: theme.palette.error.main,
+        borderRadius: 1
+      }}
+    >
+      <Typography variant="subtitle1" color="error" gutterBottom>
+        {gettext('Error Details')}
+      </Typography>
+      
+      {errorDetails.formatted_message && (
+        <Typography variant="body1" sx={{ mb: 1 }}>
+          {errorDetails.formatted_message}
+        </Typography>
+      )}
+      
+      {errorDetails.description && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            {gettext('Description')}
+          </Typography>
+          <Paper 
+            sx={{ 
+              p: 1.5, 
+              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.2 : 0.7),
+              maxHeight: '150px',
+              overflow: 'auto',
+              fontFamily: 'monospace',
+              fontSize: '0.85rem',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all'
+            }}
+          >
+            {errorDetails.description}
+          </Paper>
+        </Box>
+      )}
+      
+      {errorDetails.custom_text && (
+        <Box sx={{ mt: 1 }}>
+          <Typography variant="subtitle2" gutterBottom>
+            {gettext('Custom Text')}
+          </Typography>
+          <Paper 
+            sx={{ 
+              p: 1.5, 
+              bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.2 : 0.7),
+              maxHeight: '150px',
+              overflow: 'auto',
+              fontFamily: 'monospace',
+              fontSize: '0.85rem',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all'
+            }}
+          >
+            {errorDetails.custom_text}
+          </Paper>
+        </Box>
+      )}
+      
+      {errorDetails.timestamp && (
+        <Typography variant="caption" sx={{ display: 'block', mt: 1, color: theme.palette.text.secondary }}>
+          {gettext('Timestamp')}: {formatDateTime(errorDetails.timestamp)}
+        </Typography>
+      )}
+    </Paper>
+  );
+};
+
+export default function JobMonitor({sid, pageVisible = true}) {
   const [jobData, setJobData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refresh, setRefresh] = useState(false);
   const [tabValue, setTabValue] = useState(0);
-  const [chartTabValue, setChartTabValue] = useState(0);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [jobLogDialogOpen, setJobLogDialogOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
@@ -785,11 +868,11 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
   const [graphLoading, setGraphLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(1);
+  const [_zoomLevel, setZoomLevel] = useState(1);
   const graphRef = useRef(null);
   const theme = useTheme();
   const api = getApiInstance();
-  const [socket, setSocket] = useState(null);
+  const [_socket, setSocket] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
   
@@ -812,15 +895,15 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
   const allJobs = useMemo(() => jobData?.jobs || [], [jobData]);
   const runningJobs = useMemo(() => 
     allJobs.filter(job => job.status === 'Running'), 
-    [allJobs]
+  [allJobs]
   );
   const successJobs = useMemo(() => 
     allJobs.filter(job => job.status === 'Success'), 
-    [allJobs]
+  [allJobs]
   );
   const failedJobs = useMemo(() => 
     allJobs.filter(job => job.status === 'Failed'), 
-    [allJobs]
+  [allJobs]
   );
 
   const [jobStatusFilter, setJobStatusFilter] = useState('all');
@@ -828,23 +911,19 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
   // Get filtered jobs based on current status filter
   const filteredJobs = useMemo(() => {
     switch(jobStatusFilter) {
-      case 'running':
-        return runningJobs;
-      case 'success':
-        return successJobs;
-      case 'failed':
-        return failedJobs;
-      default:
-        return allJobs;
+    case 'running':
+      return runningJobs;
+    case 'success':
+      return successJobs;
+    case 'failed':
+      return failedJobs;
+    default:
+      return allJobs;
     }
   }, [jobStatusFilter, allJobs, runningJobs, successJobs, failedJobs]);
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
-  };
-
-  const handleChartTabChange = (event, newValue) => {
-    setChartTabValue(newValue);
   };
 
   // Handle time filter menu
@@ -938,7 +1017,6 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
         };
       });
   }, [jobData, dateRange, selectedJobFilter]);
-  console.log("Processed History Data :",processedHistoryData);
 
   const renderJobStats = () => {
     if (!jobData || !jobData.summary) {
@@ -1145,10 +1223,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
     const selectedJobName = selectedJobFilter === 'all' 
       ? gettext('All Jobs') 
       : jobFilterOptions.find(job => job.id === selectedJobFilter)?.name || gettext('Job Filter');
-    
-    const selectedTimeFilter = dateRange.days === 'custom' ? gettext('Custom range...') : gettext(`Last ${dateRange.days} days`);
-    console.log("Found Job :",jobFilterOptions.find(job => job.id === selectedJobFilter));
-    
+        
     return (
       <Box sx={{ width: '100%', mt: 2 }}>
         <Box sx={{ 
@@ -1243,13 +1318,13 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
         <Grid2 container spacing={3}>
           {/* Success/Failure Rate Chart */}
           <Grid2 item xs={12} md={6}>
-        <ChartContainer>
-            <Line 
-              data={{
+            <ChartContainer>
+              <Line 
+                data={{
                   labels: processedHistoryData.map(entry => entry.formattedDate),
-                datasets: [
-                  {
-                    label: gettext('Success Rate (%)'),
+                  datasets: [
+                    {
+                      label: gettext('Success Rate (%)'),
                       data: processedHistoryData.map(entry => entry.successRate.toFixed(2)),
                       borderColor: theme.palette.success.main,
                       backgroundColor: alpha(theme.palette.success.main, 0.1),
@@ -1257,9 +1332,9 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                       borderWidth: 2,
                       pointRadius: 4,
                       pointHoverRadius: 6
-                  },
-                  {
-                    label: gettext('Failure Rate (%)'),
+                    },
+                    {
+                      label: gettext('Failure Rate (%)'),
                       data: processedHistoryData.map(entry => entry.failureRate.toFixed(2)),
                       borderColor: theme.palette.error.main,
                       backgroundColor: alpha(theme.palette.error.main, 0.1),
@@ -1267,115 +1342,115 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                       borderWidth: 2,
                       pointRadius: 4,
                       pointHoverRadius: 6
-                  }
-                ]
-              }}
-              options={{
+                    }
+                  ]
+                }}
+                options={{
                   ...commonChartOptions,
-                plugins: {
+                  plugins: {
                     ...commonChartOptions.plugins,
-                  title: {
+                    title: {
                       ...commonChartOptions.plugins.title,
                       text: gettext('Success/Failure Rate Over Time')
-                  }
-                },
-                scales: {
-                  x: {
-                    ticks: {
-                      color: theme.palette.text.primary
-                    },
-                    grid: {
-                      color: alpha(theme.palette.text.primary, 0.1)
                     }
                   },
-                  y: {
-                    ticks: {
-                      color: theme.palette.text.primary
+                  scales: {
+                    x: {
+                      ticks: {
+                        color: theme.palette.text.primary
+                      },
+                      grid: {
+                        color: alpha(theme.palette.text.primary, 0.1)
+                      }
                     },
-                    grid: {
-                      color: alpha(theme.palette.text.primary, 0.1)
+                    y: {
+                      ticks: {
+                        color: theme.palette.text.primary
+                      },
+                      grid: {
+                        color: alpha(theme.palette.text.primary, 0.1)
+                      }
                     }
                   }
-                }
-              }}
-            />
+                }}
+              />
             </ChartContainer>
           </Grid2>
           
           {/* Job Runs Chart */}
           <Grid2 item xs={12} md={6}>
             <ChartContainer>
-            <Bar 
-              data={{
+              <Bar 
+                data={{
                   labels: processedHistoryData.map(entry => entry.formattedDate),
-                datasets: [
-                  {
-                    label: gettext('Total Runs'),
+                  datasets: [
+                    {
+                      label: gettext('Total Runs'),
                       data: processedHistoryData.map(entry => entry.total_runs),
                       backgroundColor: alpha(theme.palette.primary.main, 0.1),
                       borderColor: theme.palette.primary.main,
                       borderWidth: 1,
                       borderRadius: 4
-                  },
-                  {
-                    label: gettext('Successful Runs'),
+                    },
+                    {
+                      label: gettext('Successful Runs'),
                       data: processedHistoryData.map(entry => entry.successful_runs),
                       backgroundColor: alpha(theme.palette.success.main, 0.1),
                       borderColor: theme.palette.success.main,
                       borderWidth: 1,
                       borderRadius: 4
-                  },
-                  {
-                    label: gettext('Failed Runs'),
+                    },
+                    {
+                      label: gettext('Failed Runs'),
                       data: processedHistoryData.map(entry => entry.failed_runs),
                       backgroundColor: alpha(theme.palette.error.main, 0.1),
                       borderColor: theme.palette.error.main,
                       borderWidth: 1,
                       borderRadius: 4
-                  }
-                ]
-              }}
-              options={{
+                    }
+                  ]
+                }}
+                options={{
                   ...commonChartOptions,
-                plugins: {
+                  plugins: {
                     ...commonChartOptions.plugins,
-                  title: {
+                    title: {
                       ...commonChartOptions.plugins.title,
                       text: gettext('Job Runs Over Time')
-                  }
-                },
-                scales: {
-                  x: {
-                    ticks: {
-                      color: theme.palette.text.primary
-                    },
-                    grid: {
-                      color: alpha(theme.palette.text.primary, 0.1)
                     }
                   },
-                  y: {
-                    ticks: {
-                      color: theme.palette.text.primary
+                  scales: {
+                    x: {
+                      ticks: {
+                        color: theme.palette.text.primary
+                      },
+                      grid: {
+                        color: alpha(theme.palette.text.primary, 0.1)
+                      }
                     },
-                    grid: {
-                      color: alpha(theme.palette.text.primary, 0.1)
+                    y: {
+                      ticks: {
+                        color: theme.palette.text.primary
+                      },
+                      grid: {
+                        color: alpha(theme.palette.text.primary, 0.1)
+                      }
                     }
                   }
-                }
-              }}
-            />
+                }}
+              />
             </ChartContainer>
           </Grid2>
-          
+            
           {/* Average Duration Chart */}
           <Grid2 item xs={12} md={6}>
             <ChartContainer>
-            <Line 
-              data={{
+              <Line 
+                data={{
                   labels: processedHistoryData.map(entry => entry.formattedDate),
-                datasets: [
-                  {
-                    label: gettext('Average Duration (minutes)'),
+                  datasets: [
+                    {
+                      label: gettext('Average Duration (minutes)'),
                       data: processedHistoryData.map(entry => entry.averageDuration.toFixed(2)),
                       borderColor: theme.palette.secondary.main,
                       backgroundColor: alpha(theme.palette.secondary.main, 0.1),
@@ -1383,38 +1458,38 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                       borderWidth: 2,
                       pointRadius: 4,
                       pointHoverRadius: 6
-                  }
-                ]
-              }}
-              options={{
+                    }
+                  ]
+                }}
+                options={{
                   ...commonChartOptions,
-                plugins: {
+                  plugins: {
                     ...commonChartOptions.plugins,
-                  title: {
+                    title: {
                       ...commonChartOptions.plugins.title,
                       text: gettext('Average Job Duration Over Time')
-                  }
-                },
-                scales: {
-                  x: {
-                    ticks: {
-                      color: theme.palette.text.primary
-                    },
-                    grid: {
-                      color: alpha(theme.palette.text.primary, 0.1)
                     }
                   },
-                  y: {
-                    ticks: {
-                      color: theme.palette.text.primary
+                  scales: {
+                    x: {
+                      ticks: {
+                        color: theme.palette.text.primary
+                      },
+                      grid: {
+                        color: alpha(theme.palette.text.primary, 0.1)
+                      }
                     },
-                    grid: {
-                      color: alpha(theme.palette.text.primary, 0.1)
+                    y: {
+                      ticks: {
+                        color: theme.palette.text.primary
+                      },
+                      grid: {
+                        color: alpha(theme.palette.text.primary, 0.1)
+                      }
                     }
                   }
-                }
-              }}
-            />
+                }}
+              />
             </ChartContainer>
           </Grid2>
           
@@ -1462,7 +1537,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                   }
                 }}
               />
-        </ChartContainer>
+            </ChartContainer>
           </Grid2>
         </Grid2>
       </Box>
@@ -1552,7 +1627,6 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
 
     const setupSocket = () => {
       try {
-        console.log('[JobMonitor] Setting up socket connection...');
         
         // Check if pgAdmin and Browser are available
         if (!pgAdmin?.Browser) {
@@ -1571,7 +1645,6 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
 
         // Initialize socket if not already available
         if (!pgaJobNode.socket) {
-          console.log('[JobMonitor] Initializing new socket connection...');
           // Get the appropriate URL for socket connection
           const socketPath = url_for('pgadmin.job_socket', {'sid': sid});
           pgaJobNode.socket = io(socketPath, {
@@ -1585,9 +1658,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
         setSocketConnected(existingSocket.connected);
 
         // Improved job status update handler
-        const onJobStatusUpdate = async (data) => {
-          console.log('[JobMonitor] Job status update received:', data);
-          
+        const onJobStatusUpdate = async (data) => {          
           if (!data) return;
 
           const {
@@ -1600,8 +1671,6 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
 
           // Handle failed jobs
           if (status === 'f') {
-            console.log('[JobMonitor] Processing failed job:', job_id);
-
             // Format error message
             const errorMessage = description ? formatErrorMessage(description) : 'No error details available';
             const notificationMessage = custom_text 
@@ -1653,11 +1722,9 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
         // Set up event listeners
         existingSocket.on('job_status_update', onJobStatusUpdate);
         existingSocket.on('connect', () => {
-          console.log('[JobMonitor] Socket connected');
           setSocketConnected(true);
         });
         existingSocket.on('disconnect', () => {
-          console.log('[JobMonitor] Socket disconnected');
           setSocketConnected(false);
         });
         existingSocket.on('connect_error', (error) => {
@@ -1778,7 +1845,7 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
         <Tooltip title={autoRefresh ? gettext('Auto-refresh is ON') : gettext('Auto-refresh is OFF')}>
           <IconButton 
             onClick={handleToggleAutoRefresh}
-            color={autoRefresh ? "primary" : "default"}
+            color={autoRefresh ? 'primary' : 'default'}
             size="small"
           >
             <AccessTimeIcon />
@@ -1793,14 +1860,9 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
   const fetchDependencyGraphData = async () => {
     try {
       setGraphLoading(true);
-      console.log('Fetching dependency graph data...');
-      
       const url = url_for('dashboard.job_dependency_graph', {'sid': sid});
-      console.log('URL:', url);
       
-      const response = await api.get(url);
-      console.log('Dependency graph response:', response);
-      
+      const response = await api.get(url);      
       if (response.data && response.data.dependency_graph) {
         // Process the graph data
         const graphData = response.data.dependency_graph;
@@ -1851,7 +1913,6 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
         // Calculate node levels for hierarchical layout
         calculateNodeLevels(graphData.nodes, graphData.links);
         
-        console.log('Processed dependency graph data:', graphData);
         setDependencyGraphData(graphData);
       } else {
         console.warn('Invalid dependency graph data format:', response);
@@ -1873,20 +1934,20 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
     const statusLower = status?.toLowerCase();
     
     switch(statusLower) {
-      case 'r':
-      case 'running':
-        return theme.palette.primary.main;
-      case 's':
-      case 'success':
-        return theme.palette.success.main;
-      case 'f':
-      case 'failed':
-        return theme.palette.error.main;
-      case 'd':
-      case 'disabled':
-        return theme.palette.warning.main;
-      default:
-        return theme.palette.grey[500];
+    case 'r':
+    case 'running':
+      return theme.palette.primary.main;
+    case 's':
+    case 'success':
+      return theme.palette.success.main;
+    case 'f':
+    case 'failed':
+      return theme.palette.error.main;
+    case 'd':
+    case 'disabled':
+      return theme.palette.warning.main;
+    default:
+      return theme.palette.grey[500];
     }
   };
 
@@ -1898,20 +1959,20 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
     const statusLower = status?.toLowerCase();
     
     switch(statusLower) {
-      case 'r':
-      case 'running':
-        return theme.palette.primary.main;
-      case 's':
-      case 'success':
-        return theme.palette.success.main;
-      case 'f':
-      case 'failed':
-        return theme.palette.error.main;
-      case 'd':
-      case 'disabled':
-        return theme.palette.warning.main;
-      default:
-        return theme.palette.grey[500];
+    case 'r':
+    case 'running':
+      return theme.palette.primary.main;
+    case 's':
+    case 'success':
+      return theme.palette.success.main;
+    case 'f':
+    case 'failed':
+      return theme.palette.error.main;
+    case 'd':
+    case 'disabled':
+      return theme.palette.warning.main;
+    default:
+      return theme.palette.grey[500];
     }
   };
 
@@ -2372,8 +2433,8 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
             
             <Box sx={{ mt: 2 }}>
               {tabValue === 0 ? renderJobTabs() : 
-               tabValue === 1 ? renderCharts() : 
-               renderDependencyGraph()}
+                tabValue === 1 ? renderCharts() : 
+                  renderDependencyGraph()}
             </Box>
           </Box>
         </ScrollableContainer>
@@ -2502,9 +2563,9 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                       mb: 2, 
                       borderLeft: '4px solid',
                       borderColor: log.status === 'Success' ? theme.palette.success.main :
-                                   log.status === 'Failed' ? theme.palette.error.main :
-                                   log.status === 'Running' ? theme.palette.primary.main :
-                                   theme.palette.grey[500]
+                        log.status === 'Failed' ? theme.palette.error.main :
+                          log.status === 'Running' ? theme.palette.primary.main :
+                            theme.palette.grey[500]
                     }}
                   >
                     {/* Show error details for failed runs */}
@@ -2539,72 +2600,72 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
                         {log.steps
                           .filter(step => step.step_id !== null)
                           .map((step, stepIndex) => (
-                          <Box 
-                            key={stepIndex} 
-                            sx={{ 
-                              p: 1.5, 
-                              mb: 1, 
-                              bgcolor: alpha(theme.palette.background.paper, 0.7),
-                              borderRadius: 1,
-                              border: '1px solid',
-                              borderColor: theme.palette.divider,
-                              boxShadow: 1
-                            }}
-                          >
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                              <Typography variant="subtitle2" sx={{ color: theme.palette.primary.main }}>
-                                {step.step_name || gettext('Step')} #{stepIndex + 1}
-                              </Typography>
-                              <JobStatusChip 
-                                label={step.status} 
-                                status={step.status} 
-                                size="small" 
-                              />
-                            </Box>
-                            
-                            {step.step_desc && (
-                              <Typography variant="body2" sx={{ color: theme.palette.primary.main, mb: 1 }}>
-                                {step.step_desc}
-                              </Typography>
-                            )}
-                            
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 1 }}>
-                              {step.start_time && (
-                                <Typography variant="body2" sx={{ color: theme.palette.primary.main }}>
-                                  <strong>{gettext('Start')}:</strong> {formatDateTime(step.start_time)}
+                            <Box 
+                              key={stepIndex} 
+                              sx={{ 
+                                p: 1.5, 
+                                mb: 1, 
+                                bgcolor: alpha(theme.palette.background.paper, 0.7),
+                                borderRadius: 1,
+                                border: '1px solid',
+                                borderColor: theme.palette.divider,
+                                boxShadow: 1
+                              }}
+                            >
+                              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                                <Typography variant="subtitle2" sx={{ color: theme.palette.primary.main }}>
+                                  {step.step_name || gettext('Step')} #{stepIndex + 1}
                                 </Typography>
-                              )}
-                              {step.duration && (
-                                <Typography variant="body2" sx={{ color: theme.palette.primary.main }}>
-                                  <strong>{gettext('Duration')}:</strong> {formatDuration(step.duration)}
-                                </Typography>
-                              )}
-                            </Box>
-                            
-                            {step.output && (
-                              <Box sx={{ mt: 1 }}>
-                                <Typography variant="subtitle2" sx={{ color: theme.palette.primary.main, mb: 0.5 }}>
-                                  {gettext('Output')}
-                                </Typography>
-                                <Paper 
-                                  sx={{ 
-                                    p: 1.5, 
-                                    bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.2 : 0.7),
-                                    maxHeight: '150px',
-                                    overflow: 'auto',
-                                    fontFamily: 'monospace',
-                                    fontSize: '0.85rem',
-                                    color: theme.palette.primary.main,
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-all'
-                                  }}
-                                >
-                                  {step.output}
-                                </Paper>
+                                <JobStatusChip 
+                                  label={step.status} 
+                                  status={step.status} 
+                                  size="small" 
+                                />
                               </Box>
-                            )}
-                          </Box>
-                        ))}
+                              
+                              {step.step_desc && (
+                                <Typography variant="body2" sx={{ color: theme.palette.primary.main, mb: 1 }}>
+                                  {step.step_desc}
+                                </Typography>
+                              )}
+                            
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 1 }}>
+                                {step.start_time && (
+                                  <Typography variant="body2" sx={{ color: theme.palette.primary.main }}>
+                                    <strong>{gettext('Start')}:</strong> {formatDateTime(step.start_time)}
+                                  </Typography>
+                                )}
+                                {step.duration && (
+                                  <Typography variant="body2" sx={{ color: theme.palette.primary.main }}>
+                                    <strong>{gettext('Duration')}:</strong> {formatDuration(step.duration)}
+                                  </Typography>
+                                )}
+                              </Box>
+                              
+                              {step.output && (
+                                <Box sx={{ mt: 1 }}>
+                                  <Typography variant="subtitle2" sx={{ color: theme.palette.primary.main, mb: 0.5 }}>
+                                    {gettext('Output')}
+                                  </Typography>
+                                  <Paper 
+                                    sx={{ 
+                                      p: 1.5, 
+                                      bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.2 : 0.7),
+                                      maxHeight: '150px',
+                                      overflow: 'auto',
+                                      fontFamily: 'monospace',
+                                      fontSize: '0.85rem',
+                                      color: theme.palette.primary.main,
+                                      whiteSpace: 'pre-wrap',
+                                      wordBreak: 'break-all'
+                                    }}
+                                  >
+                                    {step.output}
+                                  </Paper>
+                                </Box>
+                              )}
+                            </Box>
+                          ))}
                       </Box>
                     ) : (
                       <Typography variant="body2" sx={{ color: theme.palette.primary.main, fontStyle: 'italic' }}>
@@ -2636,9 +2697,5 @@ export default function JobMonitor({sid, node, preferences, treeNodeInfo, nodeDa
 
 JobMonitor.propTypes = {
   sid: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
-  node: PropTypes.func,
-  preferences: PropTypes.object,
-  treeNodeInfo: PropTypes.object,
-  nodeData: PropTypes.object,
   pageVisible: PropTypes.bool,
 };

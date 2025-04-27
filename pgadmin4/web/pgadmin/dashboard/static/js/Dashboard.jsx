@@ -38,7 +38,6 @@ import usePreferences from '../../../preferences/static/js/store';
 import ErrorBoundary from '../../../static/js/helpers/ErrorBoundary';
 import { parseApiError } from '../../../static/js/api_instance';
 import SectionContainer from './components/SectionContainer';
-import Replication from './Replication';
 import { getExpandCell } from '../../../static/js/components/PgReactTableStyled';
 import CodeMirror from '../../../static/js/components/ReactCodeMirror';
 import GetAppRoundedIcon from '@mui/icons-material/GetAppRounded';

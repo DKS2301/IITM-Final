@@ -12,20 +12,14 @@ import {
   TextField, 
   Button, 
   Paper, 
-  Typography,
   Grid,
   Autocomplete,
-  IconButton,
-  InputAdornment,
-  Popover
 } from '@mui/material';
 import PgTable from 'sources/components/PgTable';
 import { PgIconButton } from '../../../static/js/components/Buttons';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import EventIcon from '@mui/icons-material/Event';
 import EmptyPanelMessage from '../../../static/js/components/EmptyPanelMessage';
 import { InputDateTimePicker } from '../../../static/js/components/FormComponents';
 import { useTheme } from '@mui/material/styles';
@@ -97,7 +91,7 @@ const getStyles = (theme) => ({
   },
 });
 
-function AuditLog({ sid, treeNodeInfo, pageVisible }) {
+function AuditLog({ sid, pageVisible }) {
   const theme = useTheme();
   const styles = getStyles(theme);
   const api = getApiInstance();

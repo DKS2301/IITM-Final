@@ -242,6 +242,7 @@ export default class PgaJobSchema extends BaseUISchema {
         id: 'jnlastnotification', type: 'text', mode: ['properties'],
         label: gettext('Last Notification'),
         group: gettext('Notifications'),
+      },{
         id: 'jdependencies', label: '', group: gettext('Dependencies'),
         type: 'collection', mode: ['edit', 'create', 'properties'],
         schema: new PgaJobDependencySchema({
