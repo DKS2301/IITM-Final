@@ -706,39 +706,38 @@ class JobView(PGChildNodeView):
     })
 
     def check_precondition(f):
-        """
-        This function will behave as a decorator which will checks
-        database connection before running view, it will also attaches
-        manager,conn & template_path properties to self
-        """
+            """
+            This function will behave as a decorator which will checks
+            database connection before running view, it will also attaches
+            manager,conn & template_path properties to self
+            """
 
-        @wraps(f)
-        def wrap(self, *args, **kwargs):
+            @wraps(f)
+            def wrap(self, *args, **kwargs):
 
-            self.manager = get_driver(
-                PG_DEFAULT_DRIVER
-            ).connection_manager(
-                kwargs['sid']
-            )
-            self.conn = self.manager.connection()
+                self.manager = get_driver(
+                    PG_DEFAULT_DRIVER
+                ).connection_manager(
+                    kwargs['sid']
+                )
+                self.conn = self.manager.connection()
 
-            # Set the template path for the sql scripts.
-            self.template_path = 'pga_job/sql/pre3.4'
+                # Set the template path for the sql scripts.
+                self.template_path = 'pga_job/sql/pre3.4'
 
-            if 'pgAgent'not in self.manager.db_info:
-                _, res = self.conn.execute_dict("""
-SELECT EXISTS(
-        SELECT 1 FROM information_schema.columns
-        WHERE
-            table_schema='pgagent' AND table_name='pga_jobstep' AND
-            column_name='jstconnstr'
-    ) has_connstr""")
+                if 'pgAgent'not in self.manager.db_info:
+                    _, res = self.conn.execute_dict("""
+    SELECT EXISTS(
+            SELECT 1 FROM information_schema.columns
+            WHERE
+                table_schema='pgagent' AND table_name='pga_jobstep' AND
+                column_name='jstconnstr'
+        ) has_connstr""")
 
-                self.manager.db_info['pgAgent'] = res['rows'][0]
+                    self.manager.db_info['pgAgent'] = res['rows'][0]
 
-            return f(self, *args, **kwargs)
-        return wrap
-
+                return f(self, *args, **kwargs)
+            return wrap
     @check_precondition
     def nodes(self, gid, sid, jid=None):
         SQL = render_template(
@@ -786,8 +785,25 @@ SELECT EXISTS(
         )
 
     @check_precondition
-    def properties(self, gid, sid, jid):
+    def properties(self, gid, sid, jid=None):
         """Get the job properties."""
+        if jid is None:
+            # Get all jobs
+            SQL = render_template(
+                "/".join([self.template_path, self._NODES_SQL]),
+                conn=self.conn
+            )
+            status, rset = self.conn.execute_dict(SQL)
+            
+            if not status:
+                return internal_server_error(errormsg=rset)
+                
+            return ajax_response(
+                response=rset['rows'],
+                status=200
+            )
+            
+        # Get specific job properties
         status, res = self.conn.execute_dict(
             render_template(
                 "/".join([self.template_path, self._PROPERTIES_SQL]),
@@ -844,7 +860,7 @@ SELECT EXISTS(
 
         row['jschedules'] = rset['rows']
 
-         # Get job dependencies
+        # Get job dependencies
         status, rset = self.conn.execute_dict(
             render_template(
                 "/".join([self.template_path, 'dependencies.sql']),

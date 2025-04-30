@@ -39,7 +39,7 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon
+  ListItemIcon,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { AdapterMoment } from '@mui/x-date-pickers/AdapterMoment';
@@ -1966,6 +1966,8 @@ export default function JobMonitor({sid, pageVisible = true}) {
     case 'success':
       return theme.palette.success.main;
     case 'f':
+    case 'x':
+    case 'dependency failure':
     case 'failed':
       return theme.palette.error.main;
     case 'd':
@@ -2128,7 +2130,7 @@ export default function JobMonitor({sid, pageVisible = true}) {
     // Function to determine node color based on hover state
     const getNodeColorWithHover = (node) => {
       if (hoveredNodeId && (node.id === hoveredNodeId || isConnected(node, hoveredNodeId))) {
-        return theme.palette.warning.main;
+        return theme.palette.info.main; 
       }
       return getNodeColor(node.status, node.enabled);
     };
