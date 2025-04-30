@@ -418,6 +418,7 @@ define('pgadmin.node.pga_job', [
                 
                 let statusData = data.status;
                 let jobId = data.job_id;
+                let jobName = data.job_name;
                 let serverId = data.sid;
                 let notification = data.notification || { browser: true };
                 let description = data.description || '';
@@ -437,14 +438,14 @@ define('pgadmin.node.pga_job', [
                   /* Call the refreshJobNode method with proper error handling */
                   if (jobId) {
                     if (statusData === 's'){
-                      let notificationMessage = gettext('Job ' + jobId + ' completed successfully');
+                      let notificationMessage = gettext('Job ' + (jobName || jobId) + ' completed successfully');
                       if (description) {
                         notificationMessage += ': ' + customText;
                       }
                       pgAdmin.Browser.notifier.success(notificationMessage);
                     }
                     else if(statusData === 'f'){
-                      let notificationMessage = gettext('Job ' + jobId + ' failed');
+                      let notificationMessage = gettext('Job ' + (jobName || jobId) + ' failed');
                       if (description) {
                         notificationMessage += ': '+customText + ' ' + description;
                       }
