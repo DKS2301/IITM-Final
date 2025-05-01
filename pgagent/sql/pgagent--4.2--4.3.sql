@@ -63,7 +63,7 @@ BEGIN
             current_user,
             NULL,
             row_to_json(NEW)::jsonb,
-            NULL
+            'Job created by user ' || current_user
         );
         RETURN NULL;
     ELSIF TG_OP = 'UPDATE' THEN
@@ -78,14 +78,40 @@ BEGIN
 
         -- Don't log changes to jobagentid, joblastrun, jobnextrun as they are internal state changes
         IF significant_change THEN
-            PERFORM pgagent.pga_log_job_operation(
-                NEW.jobid,
-                'MODIFY',
-                current_user,
-                row_to_json(OLD)::jsonb,
-                row_to_json(NEW)::jsonb,
-                NULL
-            );
+            -- Determine what was modified
+            DECLARE
+                modification_details text := 'Job modified by user ' || current_user || '. Changes: ';
+            BEGIN
+                IF OLD.jobname != NEW.jobname THEN
+                    modification_details := modification_details || 'name, ';
+                END IF;
+                IF OLD.jobdesc != NEW.jobdesc THEN
+                    modification_details := modification_details || 'description, ';
+                END IF;
+                IF OLD.jobhostagent != NEW.jobhostagent THEN
+                    modification_details := modification_details || 'host agent, ';
+                END IF;
+                IF OLD.jobenabled != NEW.jobenabled THEN
+                    modification_details := modification_details || 'enabled status, ';
+                END IF;
+                IF OLD.jobjclid != NEW.jobjclid THEN
+                    modification_details := modification_details || 'job class, ';
+                END IF;
+                
+                -- Remove trailing comma and space if any
+                IF modification_details != 'Job modified by user ' || current_user || '. Changes: ' THEN
+                    modification_details := substring(modification_details, 1, length(modification_details) - 2);
+                END IF;
+                
+                PERFORM pgagent.pga_log_job_operation(
+                    NEW.jobid,
+                    'MODIFY',
+                    current_user,
+                    row_to_json(OLD)::jsonb,
+                    row_to_json(NEW)::jsonb,
+                    modification_details
+                );
+            END;
         END IF;
         RETURN NULL;
     ELSIF TG_OP = 'DELETE' THEN

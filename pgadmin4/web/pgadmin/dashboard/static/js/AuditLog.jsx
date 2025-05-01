@@ -12,29 +12,36 @@ import {
   TextField, 
   Button, 
   Paper, 
+  Typography,
   Grid,
   Autocomplete,
+  Chip,
+  IconButton,
+  InputAdornment,
+  Popover
 } from '@mui/material';
 import PgTable from 'sources/components/PgTable';
 import { PgIconButton } from '../../../static/js/components/Buttons';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import EventIcon from '@mui/icons-material/Event';
 import EmptyPanelMessage from '../../../static/js/components/EmptyPanelMessage';
-import { InputDateTimePicker } from '../../../static/js/components/FormComponents';
-import { useTheme } from '@mui/material/styles';
+import GetAppRoundedIcon from '@mui/icons-material/GetAppRounded';
+import { downloadFile } from '../../../static/js/utils';
 
-// Define styles using theme
-const getStyles = (theme) => ({
+// Define styles as objects instead of using makeStyles
+const styles = {
   filterContainer: {
-    marginBottom: theme.spacing(2),
-    padding: theme.spacing(2),
-    backgroundColor: theme.palette.background.default,
-    borderRadius: theme.shape.borderRadius,
-    boxShadow: theme.shadows[1],
+    marginBottom: '16px',
+    padding: '20px',
+    backgroundColor: '#f8f9fa',
+    borderRadius: '8px',
+    boxShadow: '0 3px 6px rgba(0,0,0,0.1)',
   },
   filterGrid: {
-    marginBottom: theme.spacing(2),
+    marginBottom: '16px',
   },
   filterItem: {
     minWidth: '200px',
@@ -42,58 +49,233 @@ const getStyles = (theme) => ({
   filterActions: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: theme.spacing(1),
-    marginTop: theme.spacing(2),
+    gap: '8px',
+    marginTop: '16px',
   },
   filterButton: {
     textTransform: 'none',
-    borderRadius: theme.shape.borderRadius,
-    padding: theme.spacing(1, 2),
+    borderRadius: '6px',
+    padding: '6px 16px',
   },
   filterTitle: {
-    fontSize: theme.typography.h6.fontSize,
-    fontWeight: theme.typography.fontWeightMedium,
-    color: theme.palette.primary.main,
-    marginBottom: theme.spacing(2),
-    borderBottom: `1px solid ${theme.palette.divider}`,
-    paddingBottom: theme.spacing(1),
+    fontSize: '18px',
+    fontWeight: 600,
+    color: '#2c5aa0',
+    marginBottom: '20px',
+    borderBottom: '2px solid #e0e0e0',
+    paddingBottom: '10px',
   },
   filterLabel: {
-    fontWeight: theme.typography.fontWeightMedium,
-    color: theme.palette.text.primary,
+    fontWeight: 500,
+    color: '#4a4a4a',
   },
   filterSelect: {
     '& .MuiOutlinedInput-root': {
-      borderRadius: theme.shape.borderRadius,
-      backgroundColor: theme.palette.background.paper,
+      borderRadius: '6px',
+      backgroundColor: '#ffffff',
     },
   },
   filterInput: {
     '& .MuiOutlinedInput-root': {
-      borderRadius: theme.shape.borderRadius,
-      backgroundColor: theme.palette.background.paper,
+      borderRadius: '6px',
+      backgroundColor: '#ffffff',
     },
   },
   tableContainer: {
     flex: 1,
     overflow: 'auto',
-    borderRadius: theme.shape.borderRadius,
-    boxShadow: theme.shadows[1],
+    borderRadius: '8px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
   },
   headerCell: {
-    fontWeight: theme.typography.fontWeightBold,
-    backgroundColor: theme.palette.background.default,
+    fontWeight: 'bold',
+    backgroundColor: '#f1f3f5',
+  },
+  chip: {
+    margin: '2px',
   },
   title: {
-    marginBottom: theme.spacing(2),
-    fontWeight: theme.typography.fontWeightBold,
-    color: theme.palette.text.primary,
+    marginBottom: '16px',
+    fontWeight: 'bold',
+    color: '#4a4a4a',
   },
-});
+  calendar: {
+    padding: '16px',
+    width: '300px',
+  },
+  datePickerHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px',
+  },
+  datePickerGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(7, 1fr)',
+    gap: '4px',
+  },
+  dateCell: {
+    width: '36px',
+    height: '36px',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    cursor: 'pointer',
+    borderRadius: '50%',
+    '&:hover': {
+      backgroundColor: '#e0e0e0',
+    },
+  },
+  selectedDate: {
+    backgroundColor: '#1976d2',
+    color: 'white',
+    '&:hover': {
+      backgroundColor: '#1565c0',
+    },
+  },
+  dayHeader: {
+    fontWeight: 'bold',
+    textAlign: 'center',
+    padding: '4px 0',
+  },
+  timeInput: {
+    marginTop: '16px',
+  },
+};
 
-function AuditLog({ sid, pageVisible }) {
-  const theme = useTheme();
-  const styles = getStyles(theme);
+// Simple date picker component
+function DatePicker({ selectedDate, onChange, onClose }) {
+  const [date, setDate] = useState(selectedDate ? new Date(selectedDate) : new Date());
+  const [time, setTime] = useState(selectedDate ? 
+    new Date(selectedDate).toTimeString().slice(0, 5) : 
+    '00:00');
+  
+  const handleDateChange = (newDate) => {
+    setDate(newDate);
+  };
+  
+  const handleTimeChange = (e) => {
+    setTime(e.target.value);
+  };
+  
+  const handleApply = () => {
+    const dateTime = new Date(date);
+    const [hours, minutes] = time.split(':');
+    dateTime.setHours(parseInt(hours, 10));
+    dateTime.setMinutes(parseInt(minutes, 10));
+    
+    // Format as YYYY-MM-DD HH:MM:SS
+    const formattedDate = dateTime.toISOString().slice(0, 19).replace('T', ' ');
+    onChange(formattedDate);
+    onClose();
+  };
+  
+  const daysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+  const firstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+  
+  const renderCalendar = () => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const today = new Date();
+    const days = daysInMonth(year, month);
+    const firstDay = firstDayOfMonth(year, month);
+    
+    const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    
+    const prevMonth = () => {
+      const newDate = new Date(date);
+      newDate.setMonth(newDate.getMonth() - 1);
+      setDate(newDate);
+    };
+    
+    const nextMonth = () => {
+      const newDate = new Date(date);
+      newDate.setMonth(newDate.getMonth() + 1);
+      setDate(newDate);
+    };
+    
+    const isSelected = (day) => {
+      return date.getDate() === day;
+    };
+    
+    return (
+      <Box>
+        <Box sx={styles.datePickerHeader}>
+          <IconButton onClick={prevMonth} size="small">
+            &lt;
+          </IconButton>
+          <Typography variant="subtitle1">
+            {monthNames[month]} {year}
+          </Typography>
+          <IconButton onClick={nextMonth} size="small">
+            &gt;
+          </IconButton>
+        </Box>
+        
+        <Box sx={styles.datePickerGrid}>
+          {dayNames.map(day => (
+            <Box key={day} sx={styles.dayHeader}>{day}</Box>
+          ))}
+          
+          {Array.from({ length: firstDay }).map((_, i) => (
+            <Box key={`empty-${i}`} />
+          ))}
+          
+          {Array.from({ length: days }).map((_, i) => {
+            const day = i + 1;
+            return (
+              <Box 
+                key={day} 
+                sx={{
+                  ...styles.dateCell,
+                  ...(isSelected(day) ? styles.selectedDate : {}),
+                }}
+                onClick={() => {
+                  const newDate = new Date(date);
+                  newDate.setDate(day);
+                  handleDateChange(newDate);
+                }}
+              >
+                {day}
+              </Box>
+            );
+          })}
+        </Box>
+        
+        <TextField
+          label="Time"
+          type="time"
+          value={time}
+          onChange={handleTimeChange}
+          fullWidth
+          sx={styles.timeInput}
+          InputLabelProps={{ shrink: true }}
+        />
+        
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+          <Button onClick={onClose} sx={{ marginRight: '8px' }}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={handleApply}>
+            Apply
+          </Button>
+        </Box>
+      </Box>
+    );
+  };
+  
+  return (
+    <Paper sx={styles.calendar}>
+      {renderCalendar()}
+    </Paper>
+  );
+};
+
+function AuditLog({ sid, treeNodeInfo, pageVisible }) {
   const api = getApiInstance();
   
   const [auditLogs, setAuditLogs] = useState([]);
@@ -110,6 +292,28 @@ function AuditLog({ sid, pageVisible }) {
   // For job name dropdown
   const [jobNames, setJobNames] = useState([]);
   const [uniqueUsernames, setUniqueUsernames] = useState([]);
+  
+  // Date picker popover states
+  const [startDateAnchorEl, setStartDateAnchorEl] = useState(null);
+  const [endDateAnchorEl, setEndDateAnchorEl] = useState(null);
+  const openStartDatePicker = Boolean(startDateAnchorEl);
+  const openEndDatePicker = Boolean(endDateAnchorEl);
+  
+  const handleStartDateClick = (event) => {
+    setStartDateAnchorEl(event.currentTarget);
+  };
+  
+  const handleEndDateClick = (event) => {
+    setEndDateAnchorEl(event.currentTarget);
+  };
+  
+  const handleStartDateClose = () => {
+    setStartDateAnchorEl(null);
+  };
+  
+  const handleEndDateClose = () => {
+    setEndDateAnchorEl(null);
+  };
 
   // Fetch all job names for the dropdown
   const fetchJobNames = () => {
@@ -199,17 +403,22 @@ function AuditLog({ sid, pageVisible }) {
       });
   };
 
-
   const fetchAuditLogs = () => {
     if (!sid) return;
     
     setLoading(true);
     setError(null);
     
+    // Build query parameters
     let params = new URLSearchParams();
     if (operation) params.append('operation', operation);
     if (username) params.append('username', username);
-    if (jobname) params.append('jobname', jobname);
+    
+    // We're already storing the job ID in jobname
+    if (jobname) {
+      params.append('jobname', jobname);
+    }
+    
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     
@@ -252,6 +461,96 @@ function AuditLog({ sid, pageVisible }) {
     setJobname('');
     setStartDate('');
     setEndDate('');
+  };
+
+  const handleExport = (format) => {
+    if (!sid) return;
+    
+    // Build query parameters for filtering
+    let params = new URLSearchParams();
+    if (operation) params.append('operation', operation);
+    if (username) params.append('username', username);
+    
+    // We're already storing the job ID in jobname
+    if (jobname) {
+      params.append('jobname', jobname);
+    }
+    
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    
+    // Show loading state
+    setLoading(true);
+    
+    // Use the API instance to make the request with proper authentication
+    api({
+      url: url_for('dashboard.audit_logs', {'sid': sid}) + '?' + params.toString(),
+      method: 'GET',
+    })
+      .then((response) => {
+        const data = response.data;
+        let fileName = `pgagent_audit_logs_${new Date().getTime()}`;
+        let contentType = 'text/plain';
+        let content = '';
+        
+        if (format === 'json') {
+          fileName += '.json';
+          contentType = 'application/json';
+          content = JSON.stringify(data, null, 2);
+        } else if (format === 'csv') {
+          fileName += '.csv';
+          contentType = 'text/csv';
+          
+          // Create CSV content
+          if (data && data.length > 0) {
+            // Get headers from the first row
+            const headers = Object.keys(data[0]);
+            content = headers.join(',') + '\n';
+            
+            // Add data rows
+            data.forEach(row => {
+              const rowValues = headers.map(header => {
+                let value = row[header];
+                // Handle special cases for CSV formatting
+                if (value === null || value === undefined) {
+                  return '';
+                } else if (typeof value === 'object') {
+                  value = JSON.stringify(value);
+                }
+                // Escape quotes and wrap in quotes if contains comma
+                value = String(value).replace(/"/g, '""');
+                if (value.includes(',') || value.includes('\n') || value.includes('"')) {
+                  value = `"${value}"`;
+                }
+                return value;
+              });
+              content += rowValues.join(',') + '\n';
+            });
+          }
+        }
+        
+        // Download the file
+        downloadFile(content, fileName, contentType);
+        setLoading(false);
+        
+        // Show success notification
+        if (window.pgAdmin && window.pgAdmin.Browser) {
+          window.pgAdmin.Browser.notifier.success(
+            gettext(`Successfully exported audit logs in ${format.toUpperCase()} format`)
+          );
+        }
+      })
+      .catch((error) => {
+        console.error('Export failed:', error);
+        setLoading(false);
+        
+        // Show error notification
+        if (window.pgAdmin && window.pgAdmin.Browser) {
+          window.pgAdmin.Browser.notifier.error(
+            gettext(`Failed to export audit logs: ${error.message}`)
+          );
+        }
+      });
   };
 
   const columns = [
@@ -320,21 +619,25 @@ function AuditLog({ sid, pageVisible }) {
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Paper sx={styles.filterContainer}>
+        <Typography variant="h6" sx={styles.filterTitle}>
+          {gettext('Audit Log Filters')}
+        </Typography>
+        
         <Grid container spacing={2} sx={styles.filterGrid}>
-          {/* Job Name Dropdown */}
+          {/* Job Name Dropdown - First position */}
           <Grid item xs={12} sm={6} md={4}>
             <Autocomplete
               options={jobNames}
               value={jobNames.find(option => option.id === parseInt(jobname)) || 
                     jobNames.find(option => option.name === jobname) || null}
               onChange={(event, newValue) => setJobname(newValue ? newValue.id.toString() : '')}
-              getOptionLabel={(option) => option.name || ''}
+              getOptionLabel={(option) => option.display || ''}
               isOptionEqualToValue={(option, value) => option.id === value.id}
               renderInput={(params) => (
                 <TextField 
                   {...params} 
                   label={gettext('Job Name')} 
-                  size="medium"
+                  size="small"
                   fullWidth
                   sx={styles.filterInput}
                   InputLabelProps={{
@@ -344,16 +647,8 @@ function AuditLog({ sid, pageVisible }) {
                 />
               )}
               ListboxProps={{
-                style: { 
-                  maxHeight: '200px',
-                  fontSize: '0.875rem' // Smaller font size for dropdown values
-                }
+                style: { maxHeight: '200px' }
               }}
-              renderOption={(props, option) => (
-                <li {...props} style={{ fontSize: '0.875rem' }}>
-                  {option.name}
-                </li>
-              )}
             />
           </Grid>
           
@@ -367,7 +662,7 @@ function AuditLog({ sid, pageVisible }) {
                 <TextField 
                   {...params} 
                   label={gettext('Username')} 
-                  size="medium"
+                  size="small"
                   fullWidth
                   sx={styles.filterInput}
                   InputLabelProps={{
@@ -406,36 +701,96 @@ function AuditLog({ sid, pageVisible }) {
           
           {/* Start Date Picker */}
           <Grid item xs={12} sm={6} md={4}>
-            <InputDateTimePicker
-              value={startDate}
-              onChange={setStartDate}
-              controlProps={{
-                pickerType: 'DateTime',
-                format: 'yyyy-MM-dd HH:mm:ss',
-                placeholder: 'yyyy-MM-dd HH:mm:ss'
-              }}
-              label={gettext('Start Date')}
-              size="medium"
+            <TextField
               fullWidth
+              label={gettext('Start Date')}
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              placeholder="YYYY-MM-DD HH:MM:SS"
+              size="small"
               sx={styles.filterInput}
+              InputLabelProps={{
+                shrink: true,
+                sx: styles.filterLabel
+              }}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton 
+                      edge="end" 
+                      onClick={handleStartDateClick}
+                      size="small"
+                      sx={{ color: '#2c5aa0' }}
+                    >
+                      <EventIcon />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
             />
+            <Popover
+              open={openStartDatePicker}
+              anchorEl={startDateAnchorEl}
+              onClose={handleStartDateClose}
+              anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'left',
+              }}
+              elevation={3}
+            >
+              <DatePicker 
+                selectedDate={startDate} 
+                onChange={setStartDate} 
+                onClose={handleStartDateClose} 
+              />
+            </Popover>
           </Grid>
           
           {/* End Date Picker */}
           <Grid item xs={12} sm={6} md={4}>
-            <InputDateTimePicker
-              value={endDate}
-              onChange={setEndDate}
-              controlProps={{
-                pickerType: 'DateTime',
-                format: 'yyyy-MM-dd HH:mm:ss',
-                placeholder: 'yyyy-MM-dd HH:mm:ss'
-              }}
-              label={gettext('End Date')}
-              size="medium"
+            <TextField
               fullWidth
+              label={gettext('End Date')}
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              placeholder="YYYY-MM-DD HH:MM:SS"
+              size="small"
               sx={styles.filterInput}
+              InputLabelProps={{
+                shrink: true,
+                sx: styles.filterLabel
+              }}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton 
+                      edge="end" 
+                      onClick={handleEndDateClick}
+                      size="small"
+                      sx={{ color: '#2c5aa0' }}
+                    >
+                      <EventIcon />
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
             />
+            <Popover
+              open={openEndDatePicker}
+              anchorEl={endDateAnchorEl}
+              onClose={handleEndDateClose}
+              anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'left',
+              }}
+              elevation={3}
+            >
+              <DatePicker 
+                selectedDate={endDate} 
+                onChange={setEndDate} 
+                onClose={handleEndDateClose} 
+              />
+            </Popover>
           </Grid>
         </Grid>
         
@@ -446,9 +801,9 @@ function AuditLog({ sid, pageVisible }) {
             startIcon={<FilterAltIcon />}
             sx={{
               ...styles.filterButton,
-              backgroundColor: theme.palette.primary.main,
+              backgroundColor: '#2c5aa0',
               '&:hover': {
-                backgroundColor: theme.palette.primary.dark,
+                backgroundColor: '#1c4a90',
               }
             }}
             size="medium"
@@ -461,16 +816,53 @@ function AuditLog({ sid, pageVisible }) {
             startIcon={<RestartAltIcon />}
             sx={{
               ...styles.filterButton,
-              borderColor: theme.palette.primary.main,
-              color: theme.palette.primary.main,
+              borderColor: '#2c5aa0',
+              color: '#2c5aa0',
               '&:hover': {
-                borderColor: theme.palette.primary.dark,
-                backgroundColor: theme.palette.primary.light,
+                borderColor: '#1c4a90',
+                backgroundColor: 'rgba(44, 90, 160, 0.04)',
               }
             }}
             size="medium"
           >
             {gettext('Reset')}
+          </Button>
+          <Button 
+            variant="outlined" 
+            onClick={() => handleExport('json')} 
+            startIcon={<GetAppRoundedIcon />}
+            sx={{
+              ...styles.filterButton,
+              marginLeft: '8px',
+              borderColor: '#4caf50',
+              color: '#4caf50',
+              '&:hover': {
+                borderColor: '#388e3c',
+                backgroundColor: 'rgba(76, 175, 80, 0.04)',
+              }
+            }}
+            size="medium"
+            disabled={loading}
+          >
+            {gettext('Export JSON')}
+          </Button>
+          <Button 
+            variant="outlined" 
+            onClick={() => handleExport('csv')} 
+            startIcon={<GetAppRoundedIcon />}
+            sx={{
+              ...styles.filterButton,
+              borderColor: '#ff9800',
+              color: '#ff9800',
+              '&:hover': {
+                borderColor: '#f57c00',
+                backgroundColor: 'rgba(255, 152, 0, 0.04)',
+              }
+            }}
+            size="medium"
+            disabled={loading}
+          >
+            {gettext('Export CSV')}
           </Button>
         </Box>
       </Paper>

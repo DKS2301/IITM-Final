@@ -1147,6 +1147,7 @@ def job_log(sid=None, jobid=None):
             status=500
         )
 
+
 @blueprint.route('/audit_logs/<int:sid>',
                  endpoint='audit_logs', methods=['GET'])
 @pga_login_required
@@ -1155,7 +1156,7 @@ def audit_logs(sid=None):
     """
     This function returns pgAgent audit logs with optional filtering
     :param sid: server id
-    :return: JSON response with audit logs
+    :return: JSON response with audit logs or file download for export
     """
     
     if not sid:
@@ -1167,6 +1168,10 @@ def audit_logs(sid=None):
     jobname = request.args.get('jobname', None)
     start_date = request.args.get('start_date', None)
     end_date = request.args.get('end_date', None)
+    
+    # Check if export is requested
+    export = request.args.get('export', 'false').lower() == 'true'
+    export_format = request.args.get('format', 'json').lower()
     
     # Prepare template parameters
     params = {
@@ -1183,11 +1188,37 @@ def audit_logs(sid=None):
     if not status:
         return internal_server_error(errormsg=str(res))
     
+    # If export is requested, return the data in the requested format
+    if export:
+        if export_format == 'json':
+            # For JSON export
+            import json
+            response_data = json.dumps(res['rows'], indent=2)
+            response = Response(response_data, mimetype='application/json')
+            response.headers['Content-Disposition'] = 'attachment; filename=pgagent_audit_logs.json'
+            return response
+        elif export_format == 'csv':
+            # For CSV export
+            import csv
+            import io
+            
+            output = io.StringIO()
+            if res['rows']:
+                # Get column names from the first row
+                fieldnames = res['rows'][0].keys()
+                writer = csv.DictWriter(output, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(res['rows'])
+            
+            response = Response(output.getvalue(), mimetype='text/csv')
+            response.headers['Content-Disposition'] = 'attachment; filename=pgagent_audit_logs.csv'
+            return response
+    
+    # Default response for non-export requests
     return ajax_response(
         response=res['rows'],
         status=200
     )
-
 
 @blueprint.route('/job_names/<int:sid>',
                  endpoint='job_names', methods=['GET'])
