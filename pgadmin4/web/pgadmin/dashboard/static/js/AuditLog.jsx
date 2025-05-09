@@ -619,10 +619,6 @@ function AuditLog({ sid, treeNodeInfo, pageVisible }) {
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <Paper sx={styles.filterContainer}>
-        <Typography variant="h6" sx={styles.filterTitle}>
-          {gettext('Audit Log Filters')}
-        </Typography>
-        
         <Grid container spacing={2} sx={styles.filterGrid}>
           {/* Job Name Dropdown - First position */}
           <Grid item xs={12} sm={6} md={4}>

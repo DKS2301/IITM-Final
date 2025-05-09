@@ -745,11 +745,23 @@ void NotifyJobStatus(const std::string& jobId, const std::string& status, const 
         LogMessage("🔍Could not get notification settings for job " + jobId + ", using default behavior", LOG_DEBUG);
     }
 
+    // Get job name from database
+    DBconn* conn = DBconn::Get();
+    std::string jobName = "";
+    if (conn) {
+        DBresultPtr res = conn->Execute("SELECT jobname FROM pgagent.pga_job WHERE jobid = " + jobId);
+        if (res && res->HasData()) {
+            jobName = res->GetString("jobname");
+        }
+        conn->Return();
+    }
+
     std::string escapedDescription = escapeJsonString(description);
+    std::string escapedJobName = escapeJsonString(jobName);
 
     // Create JSON payload
-    std::string payload = "{\"job_id\": \"" + jobId + "\", \"status\": \"" + status + 
-                          "\", \"description\": \"" + escapedDescription + 
+    std::string payload = "{\"job_id\": \"" + jobId + "\", \"job_name\": \"" + escapedJobName + 
+                          "\", \"status\": \"" + status + "\", \"description\": \"" + escapedDescription + 
                           "\", \"timestamp\": \"" + timestamp + "\"";
     
     // Add custom text if available

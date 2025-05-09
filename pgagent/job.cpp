@@ -150,6 +150,7 @@ bool Job::CheckDependencies()
 		if (!depRes || depRes->RowsAffected() == 0)
 		{
 			LogMessage("Dependency job " + depJobId + " has no execution logs. Cannot proceed.", LOG_WARNING);
+			NotifyJobStatus(m_jobid, "f", "Dependency job " + depJobId + " has no execution logs.");
 			return false;
 		}
 
@@ -158,6 +159,7 @@ bool Job::CheckDependencies()
 		if (depStatus != "s") // 's' means success
 		{
 			LogMessage("Dependency job " + depJobId + " did not complete successfully. Status: " + depStatus, LOG_WARNING);
+			NotifyJobStatus(m_jobid, "f", "Dependency job " + depJobId + " did not complete successfully. Status: " + depStatus);
 			return false;
 		}
 

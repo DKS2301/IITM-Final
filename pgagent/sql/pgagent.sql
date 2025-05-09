@@ -25,6 +25,31 @@ jagstation           text                 NOT NULL
 COMMENT ON TABLE pgagent.pga_jobagent IS 'Active job agents';
 
 
+CREATE TABLE pga_job_notification (
+    jnid SERIAL PRIMARY KEY, -- Unique ID for each notification entry
+    jnjobid INTEGER NOT NULL, -- Foreign key referencing job ID from parent job table
+    jnenabled BOOLEAN NOT NULL DEFAULT TRUE, -- Flag to enable/disable this notification
+    jnbrowser BOOLEAN NOT NULL DEFAULT TRUE, -- If true, send browser alert
+    jnemail BOOLEAN NOT NULL DEFAULT FALSE, -- If true, send email alert
+    jnema CHAR(1) NOT NULL DEFAULT 'f', -- Notification method (e.g., 'f' for failure, 's' for success, etc.)
+    jnwhen INTEGER NOT NULL, -- When to notify (custom interpretation, ENUM or coded)
+    jnmininterval TEXT NULL, -- Minimum interval before sending another notification
+    jnrecipients TEXT NULL, -- Comma-separated list of email recipients
+    jncustomtext TEXT NULL, -- Optional custom message to include
+    jnlastnotification TIMESTAMPTZ NULL, -- Last time notification was sent
+
+    -- Constraints
+    CONSTRAINT jnwhen_check CHECK (
+        jnema IN ('a', 's', 'f') -- Only allow valid values for method
+    ),
+    
+    -- Foreign Keys
+    CONSTRAINT pga_job_notification_jnjobid_fkey 
+      FOREIGN KEY (jnjobid) REFERENCES pga_job (jobid) 
+      ON UPDATE RESTRICT ON DELETE CASCADE
+);
+
+
 
 CREATE TABLE pgagent.pga_jobclass (
 jclid                serial               NOT NULL PRIMARY KEY,
