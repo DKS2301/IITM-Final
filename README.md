@@ -1,6 +1,4 @@
-<<<<<<< HEAD
 # IITM-Final
-sample push
 =======
 # 🚀 pgAgent Enhancement Project
 
@@ -89,11 +87,16 @@ SELECT * FROM pg_stat_activity WHERE application_name = 'pgAgent';
 
 ## 📜 Enhancements Implemented
 ✅ **Job Dependencies** (Completed)  
-✅ **Audit Logging** (Completed)  
+✅ **Audit Logging** (Completed) 
+✅ **Real Time Job Status Updates** (Completed) 
+✅ **Advanced Scheduling Options** (Completed) 
+ 
 
 For detailed information on enhancements, refer to:
-- [**Job Dependency Enhancement**](https://github.com/brianchristy/Enhancement-to-pgAgent/tree/main/Enhancements/Job_Dependency)  
-- [**Audit Logging**](https://github.com/brianchristy/Enhancement-to-pgAgent/tree/main/Enhancements/Audit_Logging)
+- [**Job Dependency Enhancement**](./Enhancements/Job_Dependency/readme.md)  
+- [**Audit Logging**](./Enhancements/Audit_Logging/readme.md)
+- [**Real Time Job Status Updates**](./Enhancements/Real_Time_Job_Status/Real%20Time%20Job%20Status%20And%20Alerting.md)
+- [**Advanced Scheduling Options**](./Enhancements/Advanced_Scheduling/README.md)
 
 ---
 
